@@ -1,0 +1,57 @@
+[
+  {
+    "title": "Mega Charizard X EX #109",
+    "url": "https://www.pricecharting.com/game/pokemon-phantasmal-flames/mega-charizard-x-ex-109",
+    "pokemon": "charizard",
+    "set_name": "Phantasmal Flames",
+    "card_number": "109",
+    "prices_by_grade": {
+      "PSA 9": 148.5,
+      "PSA 10": 205.74
+    }
+  },
+  {
+    "title": "Gengar ex #111",
+    "url": "https://www.pricecharting.com/game/pokemon-temporal-forces/gengar-ex-111",
+    "pokemon": "gengar",
+    "set_name": "Temporal Forces",
+    "card_number": "111",
+    "prices_by_grade": {
+      "PSA 9": 110.0,
+      "PSA 10": 169.99
+    }
+  },
+  {
+    "title": "Umbreon VMAX #95",
+    "url": "https://www.pricecharting.com/game/pokemon-evolving-skies/umbreon-vmax-95",
+    "pokemon": "umbreon",
+    "set_name": "Evolving Skies",
+    "card_number": "95",
+    "prices_by_grade": {
+      "PSA 10": 1200.0
+    }
+  },
+  {
+    "title": "Pikachu V #45",
+    "url": "https://www.pricecharting.com/game/pokemon-lost-origin/pikachu-v-45",
+    "pokemon": "pikachu",
+    "set_name": "Lost Origin",
+    "card_number": "45",
+    "prices_by_grade": {
+      "PSA 8": 42.0,
+      "PSA 9": 55.0,
+      "PSA 10": 89.0
+    }
+  },
+  {
+    "title": "Mewtwo ex #150",
+    "url": "https://www.pricecharting.com/game/pokemon-scarlet-violet/mewtwo-ex-150",
+    "pokemon": "mewtwo",
+    "set_name": "Scarlet & Violet",
+    "card_number": "150",
+    "prices_by_grade": {
+      "PSA 10": 275.0
+    }
+  }
+]
+

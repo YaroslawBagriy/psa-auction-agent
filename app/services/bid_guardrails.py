@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from app.models.analysis import AnalysisResult
+from app.models.bidding import BidDecision
+from app.models.config import SearchConfig
+from app.models.listing import Listing
+from app.storage.sqlite import SQLiteStorage
+
+
+class BidGuardrailService:
+    def __init__(self, storage: SQLiteStorage) -> None:
+        self.storage = storage
+
+    def decide(
+        self,
+        listing: Listing,
+        analysis: AnalysisResult,
+        search_config: SearchConfig,
+    ) -> BidDecision:
+        reasons: list[str] = []
+        approved_max_bid = analysis.recommended_max_bid
+        risk_flags = list(analysis.risk_flags)
+
+        if not analysis.should_bid:
+            reasons.append("Analysis agent recommended against bidding.")
+
+        if analysis.confidence < search_config.bid_guardrails.confidence_threshold:
+            reasons.append("Analysis confidence is below the configured threshold.")
+
+        if search_config.bid_guardrails.max_bid_cap is not None:
+            approved_max_bid = min(approved_max_bid, search_config.bid_guardrails.max_bid_cap)
+
+        if approved_max_bid <= listing.current_price:
+            reasons.append("Approved max bid does not exceed the current auction price.")
+
+        expected_margin = round(approved_max_bid - listing.current_price, 2)
+        if expected_margin < search_config.bid_guardrails.min_expected_margin:
+            reasons.append("Expected margin is below the configured minimum.")
+
+        if (
+            search_config.bid_guardrails.prevent_duplicate_bids
+            and self.storage.has_bid_attempt(listing.listing_id)
+        ):
+            reasons.append("A prior bid attempt already exists for this listing.")
+
+        approved = not reasons
+        return BidDecision(
+            listing_id=listing.listing_id,
+            approved=approved,
+            reason="Approved by deterministic bid guardrails." if approved else " ".join(reasons),
+            approved_max_bid=round(approved_max_bid, 2) if approved else None,
+            expected_margin=expected_margin if approved else None,
+            risk_flags=risk_flags,
+            dry_run=search_config.dry_run,
+        )
+
