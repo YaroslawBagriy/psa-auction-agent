@@ -1,4 +1,12 @@
 from app.prompts.analysis_prompt import ANALYSIS_HUMAN_PROMPT, ANALYSIS_SYSTEM_PROMPT
+from app.prompts.auction_search_prompt import (
+    AUCTION_SEARCH_HUMAN_PROMPT,
+    AUCTION_SEARCH_SYSTEM_PROMPT,
+)
 
-__all__ = ["ANALYSIS_HUMAN_PROMPT", "ANALYSIS_SYSTEM_PROMPT"]
-
+__all__ = [
+    "ANALYSIS_HUMAN_PROMPT",
+    "ANALYSIS_SYSTEM_PROMPT",
+    "AUCTION_SEARCH_HUMAN_PROMPT",
+    "AUCTION_SEARCH_SYSTEM_PROMPT",
+]

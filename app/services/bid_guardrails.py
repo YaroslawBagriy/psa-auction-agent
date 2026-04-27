@@ -27,13 +27,16 @@ class BidGuardrailService:
         if analysis.confidence < search_config.bid_guardrails.confidence_threshold:
             reasons.append("Analysis confidence is below the configured threshold.")
 
+        if analysis.trend_outlook not in search_config.bid_guardrails.allowed_trend_outlooks:
+            reasons.append("Trend outlook is not in the allowed trend outlook set.")
+
         if search_config.bid_guardrails.max_bid_cap is not None:
             approved_max_bid = min(approved_max_bid, search_config.bid_guardrails.max_bid_cap)
 
         if approved_max_bid <= listing.current_price:
             reasons.append("Approved max bid does not exceed the current auction price.")
 
-        expected_margin = round(approved_max_bid - listing.current_price, 2)
+        expected_margin = round(analysis.estimated_market_value - approved_max_bid, 2)
         if expected_margin < search_config.bid_guardrails.min_expected_margin:
             reasons.append("Expected margin is below the configured minimum.")
 
@@ -53,4 +56,3 @@ class BidGuardrailService:
             risk_flags=risk_flags,
             dry_run=search_config.dry_run,
         )
-

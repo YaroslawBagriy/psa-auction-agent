@@ -1,31 +1,52 @@
 [
   {
     "listing_id": "1001",
-    "title": "2025 Pokemon PFL EN-Phantasmal Flames Ultra Rare #109 Mega Charizard X EX PSA 10 - In the PSA Vault",
+    "title": "2025 Pokemon PFL EN-Phantasmal Flames Ultra Rare #109 Mega Charizard X EX PSA 10",
     "seller_name": "psa-dna",
     "url": "https://www.ebay.com/itm/1001",
     "listing_type": "AUCTION",
     "current_price": 120.0,
-    "end_time": "2030-01-05T18:00:00Z",
+    "end_time": "__NOW_PLUS_8_MIN__",
     "currency": "USD",
-    "subtitle": "Official PSA auction. In the PSA Vault.",
+    "subtitle": "Official PSA auction.",
     "description": "PSA official eBay auction listing.",
-    "condition_description": "Stored in the PSA Vault.",
+    "condition_description": "Collector-owned and consigned with PSA.",
+    "page_badges": ["In the PSA Vault"],
+    "page_highlights": [
+      "Items in the PSA Vault are securely stored, insured, and backed by Authenticity Guarantee.",
+      "When you buy an item that's in the PSA Vault and keep it there, ownership transfers instantly."
+    ],
+    "market_context": {
+      "estimated_market_value": 198.0,
+      "trend_outlook": "upward",
+      "trend_summary": "Recent PSA 10 comps have been climbing over the last several weeks with strong buyer demand.",
+      "recent_sales": [186.0, 194.0, 201.0, 211.0]
+    },
     "set_name": "Phantasmal Flames",
     "category_name": "Pokemon TCG"
   },
   {
     "listing_id": "1002",
-    "title": "2024 Pokemon Temporal Forces #111 Gengar ex PSA 9 - In the PSA Vault",
+    "title": "2024 Pokemon Temporal Forces #111 Gengar ex PSA 9",
     "seller_name": "psa-dna",
     "url": "https://www.ebay.com/itm/1002",
     "listing_type": "AUCTION",
     "current_price": 82.0,
-    "end_time": "2030-01-05T19:00:00Z",
+    "end_time": "__NOW_PLUS_7_MIN__",
     "currency": "USD",
-    "subtitle": "PSA Vault auction",
-    "description": "Official PSA listing. In the PSA Vault.",
-    "condition_description": "Vaulted at PSA.",
+    "subtitle": "Official PSA auction",
+    "description": "Official PSA listing.",
+    "condition_description": "Collector-owned and consigned with PSA.",
+    "page_badges": ["In the PSA Vault"],
+    "page_highlights": [
+      "Items in the PSA Vault are securely stored, insured, and backed by Authenticity Guarantee."
+    ],
+    "market_context": {
+      "estimated_market_value": 88.0,
+      "trend_outlook": "downward",
+      "trend_summary": "Recent PSA 9 sales have softened and the short-term trend is drifting lower.",
+      "recent_sales": [102.0, 97.0, 91.0, 88.0]
+    },
     "set_name": "Temporal Forces",
     "category_name": "Pokemon Singles"
   },
@@ -36,11 +57,16 @@
     "url": "https://www.ebay.com/itm/1003",
     "listing_type": "AUCTION",
     "current_price": 900.0,
-    "end_time": "2030-01-06T18:00:00Z",
+    "end_time": "__NOW_PLUS_14_MIN__",
     "currency": "USD",
     "subtitle": "Official PSA auction",
     "description": "No vault wording in this sample.",
     "condition_description": "Graded and vaulted inventory.",
+    "market_context": {
+      "estimated_market_value": 1180.0,
+      "trend_outlook": "steady",
+      "trend_summary": "High-end Umbreon demand remains stable but this sample should fail the vault and time-window checks first."
+    },
     "set_name": "Evolving Skies",
     "category_name": "Pokemon TCG"
   },
@@ -51,41 +77,58 @@
     "url": "https://www.ebay.com/itm/1004",
     "listing_type": "AUCTION",
     "current_price": 210.0,
-    "end_time": "2030-01-07T18:00:00Z",
+    "end_time": "__NOW_PLUS_5_MIN__",
     "currency": "USD",
     "subtitle": "In the PSA Vault",
     "description": "Not sold by the official PSA account.",
     "condition_description": "Vaulted.",
+    "market_context": {
+      "estimated_market_value": 260.0,
+      "trend_outlook": "steady",
+      "trend_summary": "Seller is not PSA, so this should be filtered out before the LLM stages."
+    },
     "set_name": "Darkness Ablaze",
     "category_name": "Pokemon TCG"
   },
   {
     "listing_id": "1005",
-    "title": "2024 Pokemon Scarlet & Violet Mewtwo ex #150 PSA 10 - In the PSA Vault",
+    "title": "2024 Pokemon Scarlet & Violet Mewtwo ex #150 PSA 10",
     "seller_name": "psa-dna",
     "url": "https://www.ebay.com/itm/1005",
     "listing_type": "FIXED_PRICE",
     "current_price": 250.0,
-    "end_time": "2030-01-07T19:00:00Z",
+    "end_time": "__NOW_PLUS_9_MIN__",
     "currency": "USD",
     "subtitle": "Buy It Now sample",
     "description": "Fixed price listing to prove auction filtering.",
-    "condition_description": "In the PSA Vault.",
+    "condition_description": "Collector-owned and consigned with PSA.",
+    "page_badges": ["In the PSA Vault"],
+    "market_context": {
+      "estimated_market_value": 275.0,
+      "trend_outlook": "steady",
+      "trend_summary": "Fixed-price listing; should fail the auction-only rule before any agent analysis."
+    },
     "set_name": "Scarlet & Violet",
     "category_name": "Pokemon TCG"
   },
   {
     "listing_id": "1006",
-    "title": "2022 Pokemon Lost Origin Pikachu V #45 PSA 8 - In the PSA Vault",
+    "title": "2022 Pokemon Lost Origin Pikachu V #45 PSA 8",
     "seller_name": "psa-dna",
     "url": "https://www.ebay.com/itm/1006",
     "listing_type": "AUCTION",
     "current_price": 40.0,
-    "end_time": "2030-01-08T18:00:00Z",
+    "end_time": "__NOW_PLUS_6_MIN__",
     "currency": "USD",
     "subtitle": "Official PSA auction",
     "description": "Vaulted Pikachu example.",
-    "condition_description": "In the PSA Vault.",
+    "condition_description": "Collector-owned and consigned with PSA.",
+    "page_badges": ["In the PSA Vault"],
+    "market_context": {
+      "estimated_market_value": 55.0,
+      "trend_outlook": "steady",
+      "trend_summary": "Reasonable value, but the sample grade is outside the default allowed grades."
+    },
     "set_name": "Lost Origin",
     "category_name": "Pokemon TCG"
   },
@@ -96,13 +139,17 @@
     "url": "https://www.ebay.com/itm/1007",
     "listing_type": "AUCTION",
     "current_price": 60.0,
-    "end_time": "2030-01-08T19:00:00Z",
+    "end_time": "__NOW_PLUS_4_MIN__",
     "currency": "USD",
     "subtitle": "Sports card sample",
     "description": "Non-Pokemon sample listing.",
     "condition_description": "In the PSA Vault.",
+    "market_context": {
+      "estimated_market_value": 72.0,
+      "trend_outlook": "steady",
+      "trend_summary": "Non-Pokemon listing; should be filtered out well before bidding."
+    },
     "set_name": "Topps Chrome",
     "category_name": "Sports Trading Cards"
   }
 ]
-

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from app.models.listing import Listing, RawListing
 from app.models.pokemon import Pokemon
@@ -15,16 +16,9 @@ CARD_NUMBER_PATTERNS = (
 
 class ListingParser:
     def parse(self, raw_listing: RawListing) -> Listing:
-        combined_text = " ".join(
-            part
-            for part in [
-                raw_listing.title,
-                raw_listing.subtitle,
-                raw_listing.description,
-                raw_listing.condition_description,
-            ]
-            if part
-        )
+        searchable_fragments = self.collect_searchable_fragments(raw_listing)
+        combined_text = " ".join(fragment for _, fragment in searchable_fragments)
+        vault_evidence = self.detect_vault_evidence(raw_listing)
 
         normalized_title = normalize_text(raw_listing.title)
         detected_pokemon = self.detect_pokemon(combined_text)
@@ -32,7 +26,6 @@ class ListingParser:
         grade_value = self.extract_grade(raw_listing.title)
         set_name = raw_listing.set_name or self.extract_set_name(raw_listing.title, detected_pokemon)
         card_number = self.extract_card_number(raw_listing.title)
-        in_psa_vault = contains_normalized_phrase(combined_text, "in the psa vault")
         is_pokemon_related = self.is_pokemon_related(raw_listing, detected_pokemon)
 
         return Listing(
@@ -48,11 +41,75 @@ class ListingParser:
             detected_pokemon=detected_pokemon,
             set_name=set_name,
             card_number=card_number,
-            in_psa_vault=in_psa_vault,
+            in_psa_vault=bool(vault_evidence),
+            vault_evidence=vault_evidence,
+            market_context=raw_listing.market_context,
             is_pokemon_related=is_pokemon_related,
             normalized_title=normalized_title,
             raw_payload=raw_listing.model_dump(mode="json", exclude={"raw_payload"}),
         )
+
+    def collect_searchable_fragments(self, raw_listing: RawListing) -> list[tuple[str, str]]:
+        fragments: list[tuple[str, str]] = []
+        for field_name, value in (
+            ("title", raw_listing.title),
+            ("subtitle", raw_listing.subtitle),
+            ("description", raw_listing.description),
+            ("condition_description", raw_listing.condition_description),
+            ("category_name", raw_listing.category_name),
+            ("set_name", raw_listing.set_name),
+        ):
+            if value:
+                fragments.append((field_name, value))
+
+        for index, value in enumerate(raw_listing.page_badges):
+            if value:
+                fragments.append((f"page_badges[{index}]", value))
+
+        for index, value in enumerate(raw_listing.page_highlights):
+            if value:
+                fragments.append((f"page_highlights[{index}]", value))
+
+        for key, value in raw_listing.item_specifics.items():
+            if isinstance(value, str) and value:
+                fragments.append((f"item_specifics.{key}", value))
+
+        return fragments
+
+    def detect_vault_evidence(self, raw_listing: RawListing) -> list[str]:
+        evidence: list[str] = []
+        seen: set[str] = set()
+        fragments = self.collect_searchable_fragments(raw_listing)
+        fragments.extend(self.extract_nested_strings(raw_listing.raw_payload, prefix="raw_payload"))
+
+        for source, text in fragments:
+            if not contains_normalized_phrase(text, "in the psa vault"):
+                continue
+            normalized_text = normalize_text(text)
+            if normalized_text in seen:
+                continue
+            seen.add(normalized_text)
+            evidence.append(f"{source}: {text.strip()}")
+
+        return evidence
+
+    def extract_nested_strings(self, value: Any, prefix: str) -> list[tuple[str, str]]:
+        if isinstance(value, str):
+            return [(prefix, value)]
+
+        if isinstance(value, dict):
+            results: list[tuple[str, str]] = []
+            for key, nested_value in value.items():
+                results.extend(self.extract_nested_strings(nested_value, f"{prefix}.{key}"))
+            return results
+
+        if isinstance(value, list):
+            results = []
+            for index, nested_value in enumerate(value):
+                results.extend(self.extract_nested_strings(nested_value, f"{prefix}[{index}]"))
+            return results
+
+        return []
 
     def detect_grading_company(self, title: str) -> str | None:
         if contains_normalized_phrase(title, "psa"):
@@ -102,6 +159,5 @@ class ListingParser:
     def is_pokemon_related(self, raw_listing: RawListing, detected_pokemon: Pokemon | None) -> bool:
         if detected_pokemon is not None:
             return True
-        combined = " ".join(part for part in [raw_listing.title, raw_listing.category_name] if part)
+        combined = " ".join(fragment for _, fragment in self.collect_searchable_fragments(raw_listing))
         return contains_normalized_phrase(combined, "pokemon")
-

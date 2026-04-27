@@ -4,70 +4,89 @@ import json
 from abc import ABC, abstractmethod
 
 from app.agents.base import BaseAgent
-from app.models.analysis import AnalysisResult, AnalyzerInput
+from app.models.analysis import AnalysisResult, MarketAnalysisBatchResult, MarketAnalysisInput
 from app.models.config import TargetRules
 from app.models.listing import Listing
-from app.models.price_research import PriceResearchResult
 from app.prompts.analysis_prompt import ANALYSIS_HUMAN_PROMPT, ANALYSIS_SYSTEM_PROMPT
 from app.storage.sqlite import SQLiteStorage
 
 
 class AnalysisEngine(ABC):
     @abstractmethod
-    def analyze(self, analyzer_input: AnalyzerInput) -> AnalysisResult:
+    def analyze(self, analysis_input: MarketAnalysisInput) -> MarketAnalysisBatchResult:
         raise NotImplementedError
 
 
 class HeuristicAnalysisEngine(AnalysisEngine):
-    def analyze(self, analyzer_input: AnalyzerInput) -> AnalysisResult:
-        listing = analyzer_input.listing
-        price_research = analyzer_input.price_research
+    def analyze(self, analysis_input: MarketAnalysisInput) -> MarketAnalysisBatchResult:
+        analyses = [
+            self._analyze_listing(listing)
+            for listing in analysis_input.listings
+        ]
+        return MarketAnalysisBatchResult(analyses=analyses)
+
+    def _analyze_listing(self, listing: Listing) -> AnalysisResult:
+        market_context = listing.market_context
         risk_flags: list[str] = []
 
-        estimated_market_value = price_research.target_grade_price or 0.0
+        recent_sales = [
+            float(value)
+            for value in market_context.get("recent_sales", [])
+            if isinstance(value, (int, float))
+        ]
+        estimated_market_value = float(market_context.get("estimated_market_value") or 0.0)
+        if estimated_market_value <= 0 and recent_sales:
+            estimated_market_value = round(sum(recent_sales) / len(recent_sales), 2)
         if estimated_market_value <= 0:
-            risk_flags.append("missing_exact_grade_comp")
-            reasoning = "No exact grade-specific PriceCharting comp was found, so the card stays out of bidding range."
-            return AnalysisResult(
-                should_bid=False,
-                confidence=0.30,
-                estimated_market_value=0.0,
-                recommended_max_bid=0.0,
-                reasoning=reasoning,
-                risk_flags=risk_flags,
-            )
+            estimated_market_value = round(listing.current_price * 1.08, 2)
+            risk_flags.append("limited_market_context")
 
-        if price_research.match_confidence < 0.60:
-            risk_flags.append("weak_price_match")
+        trend_outlook = str(market_context.get("trend_outlook", "uncertain")).strip().lower() or "uncertain"
+        if trend_outlook not in {"upward", "steady", "downward", "uncertain"}:
+            trend_outlook = "uncertain"
+            risk_flags.append("unknown_trend_outlook")
 
-        recommended_max_bid = min(estimated_market_value * 0.82, estimated_market_value - 15.0)
-        recommended_max_bid = max(round(recommended_max_bid, 2), 0.0)
-        current_price = listing.current_price
-        expected_margin = recommended_max_bid - current_price
-        should_bid = expected_margin > 0 and price_research.match_confidence >= 0.60
-
-        confidence = 0.55 + (price_research.match_confidence * 0.25)
-        if expected_margin > 0:
-            confidence += min(expected_margin / 200.0, 0.15)
-        if "weak_price_match" in risk_flags:
-            confidence -= 0.15
-        confidence = max(0.0, min(round(confidence, 3), 0.98))
-
-        if current_price >= estimated_market_value:
-            risk_flags.append("current_price_at_or_above_market")
-        elif expected_margin < 20:
-            risk_flags.append("thin_margin")
-
-        reasoning = (
-            f"Current price is ${current_price:.2f}, grade-adjusted market value is "
-            f"${estimated_market_value:.2f}, and the conservative max bid is "
-            f"${recommended_max_bid:.2f}."
+        ratio_by_trend = {
+            "upward": 0.90,
+            "steady": 0.85,
+            "downward": 0.75,
+            "uncertain": 0.80,
+        }
+        recommended_max_bid = round(estimated_market_value * ratio_by_trend[trend_outlook], 2)
+        should_bid = (
+            trend_outlook in {"upward", "steady"}
+            and recommended_max_bid > listing.current_price
+            and estimated_market_value > listing.current_price
         )
+
+        confidence = 0.58
+        if recent_sales:
+            confidence += 0.12
+        if trend_outlook in {"upward", "steady"}:
+            confidence += 0.10
+        if "limited_market_context" in risk_flags:
+            confidence -= 0.18
+        confidence = max(0.0, min(round(confidence, 3), 0.95))
+
+        if trend_outlook == "downward":
+            risk_flags.append("downward_price_trend")
+        if recommended_max_bid <= listing.current_price:
+            risk_flags.append("insufficient_margin_above_current_bid")
+
+        reasoning = market_context.get("trend_summary") or (
+            f"Current price is ${listing.current_price:.2f}, estimated market value is "
+            f"${estimated_market_value:.2f}, trend outlook is {trend_outlook}, and the "
+            f"recommended max bid is ${recommended_max_bid:.2f}."
+        )
+
         return AnalysisResult(
+            listing_id=listing.listing_id,
+            url=listing.url,
             should_bid=should_bid,
             confidence=confidence,
-            estimated_market_value=round(estimated_market_value, 2),
+            estimated_market_value=estimated_market_value,
             recommended_max_bid=recommended_max_bid,
+            trend_outlook=trend_outlook,  # type: ignore[arg-type]
             reasoning=reasoning,
             risk_flags=risk_flags,
         )
@@ -85,23 +104,18 @@ class OpenAIAnalysisEngine(AnalysisEngine):
             ]
         )
         model = ChatOpenAI(model=model_name, temperature=0.0)
-        self.chain = prompt | model.with_structured_output(AnalysisResult)
+        self.chain = prompt | model.with_structured_output(MarketAnalysisBatchResult)
 
-    def analyze(self, analyzer_input: AnalyzerInput) -> AnalysisResult:
+    def analyze(self, analysis_input: MarketAnalysisInput) -> MarketAnalysisBatchResult:
         return self.chain.invoke(
             {
-                "listing_json": json.dumps(
-                    analyzer_input.listing.model_dump(mode="json"),
-                    indent=2,
-                    sort_keys=True,
-                ),
-                "price_json": json.dumps(
-                    analyzer_input.price_research.model_dump(mode="json"),
+                "listings_json": json.dumps(
+                    [listing.model_dump(mode="json") for listing in analysis_input.listings],
                     indent=2,
                     sort_keys=True,
                 ),
                 "rules_json": json.dumps(
-                    analyzer_input.target_rules.model_dump(mode="json"),
+                    analysis_input.target_rules.model_dump(mode="json"),
                     indent=2,
                     sort_keys=True,
                 ),
@@ -120,22 +134,21 @@ class AnalysisAgent(BaseAgent):
     def run(
         self,
         run_id: str,
-        listing: Listing,
-        price_research: PriceResearchResult,
+        listings: list[Listing],
         target_rules: TargetRules,
-    ) -> AnalysisResult:
-        analyzer_input = AnalyzerInput(
-            listing=listing,
-            price_research=price_research,
+    ) -> MarketAnalysisBatchResult:
+        if not listings:
+            return MarketAnalysisBatchResult()
+
+        analysis_input = MarketAnalysisInput(
+            listings=listings,
             target_rules=target_rules,
         )
-        result = self.engine.analyze(analyzer_input)
-        self.storage.record_analysis(run_id, listing.listing_id, result)
+        result = self.engine.analyze(analysis_input)
+        for analysis in result.analyses:
+            self.storage.record_analysis(run_id, analysis.listing_id, analysis)
         self.logger.debug(
-            "Analysis for listing %s should_bid=%s confidence=%.3f",
-            listing.listing_id,
-            result.should_bid,
-            result.confidence,
+            "Market analysis completed for %s listings",
+            len(result.analyses),
         )
         return result
-

@@ -9,7 +9,7 @@ from typing import Any
 from app.models.analysis import AnalysisResult
 from app.models.bidding import BidDecision, BidExecutionResult
 from app.models.listing import Listing, RawListing
-from app.models.price_research import PriceResearchResult
+from app.models.review import AuctionSearchDecision
 from app.models.validation import ValidationResult
 
 
@@ -42,7 +42,7 @@ class SQLiteStorage:
             )
             """,
             """
-            CREATE TABLE IF NOT EXISTS price_research_results (
+            CREATE TABLE IF NOT EXISTS auction_search_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id TEXT NOT NULL,
                 listing_id TEXT NOT NULL,
@@ -124,12 +124,12 @@ class SQLiteStorage:
             },
         )
 
-    def record_price_research(self, run_id: str, price_research: PriceResearchResult) -> None:
+    def record_search_decision(self, run_id: str, decision: AuctionSearchDecision) -> None:
         self._insert_payload(
-            "price_research_results",
+            "auction_search_results",
             run_id,
-            price_research.listing_id,
-            price_research.model_dump(mode="json"),
+            decision.listing_id,
+            decision.model_dump(mode="json"),
         )
 
     def record_analysis(self, run_id: str, listing_id: str, analysis: AnalysisResult) -> None:
