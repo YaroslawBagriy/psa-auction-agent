@@ -1,0 +1,141 @@
+\documentclass[11pt]{article}
+
+% Based on the original ACL template file, but with the template text removed.
+\usepackage[review]{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{inconsolata}
+
+\title{Assignment \#11 Progress Draft: Pokemon PSA eBay Card Trader}
+
+\author{Yaroslaw Bagriy}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document is a rough progress draft for my final project. My project idea is an automatic Pokemon PSA eBay card trader built as a multi-agent system. At this point, I have mainly narrowed the scope, defined the MVP, and planned the first implementation step.
+\end{abstract}
+
+\section{Introduction}
+My final project is an automatic Pokemon PSA eBay card trader. The general idea is to build a multi-agent system that can scan PSA's official eBay listings for Pokemon cards, identify possible buying opportunities, and eventually support bidding decisions.
+
+I chose this topic because it connects directly to something I already do. I buy and sell Pokemon cards as part of my small business, so this project feels practical and personally relevant. It also fits well with class topics like agents, orchestration, and automation.
+
+My minimal goal is a smaller MVP focused on auction listings and bidding support. My optimistic goal is to eventually expand the project into a broader buying assistant that could also support Buy It Now or Best Offer workflows.
+
+\section{Exploring}
+My starting point for this project was an interest in agents, orchestration, and practical AI systems. I wanted a topic that felt like a real workflow instead of only a class exercise.
+
+At first, my idea was broader and included both buying and possible resale support. After thinking more about time and scope, I narrowed it down to PSA-graded Pokemon cards from PSA's official eBay account. That version feels much more realistic for a class project.
+
+The main sources that shaped the idea were my own experience in the card market, class material on agents and tool use, and my original project proposal.
+
+\section{Building}
+At this stage, I have not started coding the project yet. Most of my progress so far has been in planning and narrowing the scope.
+
+The first agent I plan to build is a scanner agent that checks PSA's official eBay listings for Pokemon cards. I see this as the foundation for the project, because the rest of the system depends on getting relevant listing data first.
+
+My goal is to get that first scanner agent working by Friday, April 24, 2026. After that, I want to move on to filtering or organizing the listings so the system can focus on relevant auction opportunities.
+
+Since development has not started yet, I do not have experiments, metrics, or model results to report at this time.
+
+\section{Discovering}
+One of the main things I have learned so far is that scope matters. My original idea was larger, but I realized I needed to reduce it to something more realistic.
+
+I have also learned that projects like this are not only about choosing a model. They are also about defining tasks clearly, deciding what should be automated, and figuring out how the parts of the system should connect.
+
+So far, the main result of my work is a clearer project definition and a better understanding of the first development step.
+
+\section{Topic 1: Agents}
+This project illustrates the class topic of agents because the overall workflow can be broken into separate roles. For example, one agent can scan listings, another can analyze them, and another can support bidding decisions.
+
+\section{Topic 2: Tool Use}
+This project connects to tool use because it depends on outside data rather than only text generation. A system like this would need to work with listing information and possibly marketplace APIs.
+
+\section{Topic 3: Task Decomposition}
+This project connects strongly to task decomposition because the final system includes several different steps that need to work together. Instead of trying to build the entire trader at once, I can break it into smaller stages and connect them over time.
+
+The task decomposition from start to final project currently looks like this:
+
+\begin{enumerate}
+    \item \textbf{Define the MVP and scope.}  
+    The first step is deciding what the system should actually do. For my MVP, the goal is an automated analyzer and bidder focused on PSA's official eBay listings for Pokemon cards.
+
+    \item \textbf{Research APIs, listing access, and technical constraints.}  
+    Before development, I need to confirm what data can be pulled from PSA's official eBay listings and what bidding functionality is realistically available.
+
+    \item \textbf{Build the scanner agent.}  
+    This is the first major implementation step. The scanner agent will monitor PSA's official eBay listings and collect Pokemon card auction data.
+
+    \item \textbf{Parse and structure listing data.}  
+    Once listings are collected, the system needs to organize the data into a consistent format, including title, grade, current price, time remaining, and other useful fields.
+
+    \item \textbf{Filter relevant listings.}  
+    The system should narrow the listings down to PSA-graded Pokemon cards that fit the intended project scope.
+
+    \item \textbf{Build the analyzer agent.}  
+    After filtering, the next step is an analyzer that evaluates whether a listing looks like a worthwhile buying opportunity.
+
+    \item \textbf{Create decision logic.}  
+    The project then needs rules or model-based logic for determining when a listing should be targeted for bidding.
+
+    \item \textbf{Build the bidding agent.}  
+    Once a listing is identified as a good opportunity, the bidding agent should place or manage bids automatically for auction listings.
+
+    \item \textbf{Connect the agents into one workflow.}  
+    After the individual parts are working, the scanner, filter, analyzer, decision logic, and bidding components need to be linked together into a complete pipeline.
+
+    \item \textbf{Test the system end to end.}  
+    At this point, I would test the full workflow from scanning listings to placing bids automatically.
+
+    \item \textbf{Evaluate results and reliability.}  
+    I would then evaluate how well the system performs, including whether it identifies relevant listings and whether the bidding behavior seems useful and realistic.
+
+    \item \textbf{Document limitations and blockers.}  
+    An important step is being honest about technical issues, API limitations, or missing features that prevent the project from becoming fully complete.
+
+    \item \textbf{Leave resale as a later step.}  
+    For now, the resale side is not part of the automated MVP. If cards are acquired, I would still manually decide how to relist them for sale.
+\end{enumerate}
+
+Breaking the project into these tasks makes the full system more manageable. It also reflects an important class idea: complex AI systems are easier to build when they are separated into smaller subtasks with clear roles.
+
+\section{Topic 4: Automation and Human Oversight}
+In the current version of my project idea, the MVP is intended to be highly automated on the buying side. The goal is for the system to scan PSA's official eBay listings for Pokemon cards, analyze auction opportunities, and make bidding decisions automatically without requiring human approval at each step.
+
+At the moment, the main area where a person would still remain involved is on the resale side. If the system successfully acquires cards, I would still manually decide how and when to list those cards for sale. Because of that, the project is better described as a fully automated analyzer and bidder for acquisition, rather than a fully automated end-to-end trading system.
+
+This also helps reduce the scope of the project. Instead of automating both buying and selling at once, I can focus first on building a reliable automated workflow for scanning, analyzing, and bidding.
+
+\section{Topic 5: Evaluation}
+This project also connects to evaluation. In this kind of system, evaluation is not only about model quality. It is also about whether the system finds the right listings and produces useful recommendations.
+
+\section{Correctness and Completeness}
+This is still an early planning draft, so the project is not complete yet. I have tried to be accurate about my current progress and not claim that parts are finished when they are not.
+
+At this point, the most complete parts of the project are the project definition, narrowed scope, MVP plan, and next development target. The implementation and testing are still ahead.
+
+\section{Limitations}
+The biggest limitation is that I have not started development yet, so this document is mainly a planning update.
+
+Another limitation is that the project depends on outside systems and marketplace rules, so there may be API or workflow constraints that affect what can be built.
+
+There are also ethical concerns. A highly automated trading system could create unfair advantages over ordinary buyers, so I currently see this more as an assistant than a fully autonomous system.
+
+\section{Planned Next Steps}
+My next step is to begin development of the scanner agent that checks PSA's official eBay listings for Pokemon cards. My target is to get that first agent working by Friday, April 24, 2026.
+
+After that, I want to continue one step at a time by organizing or filtering listings before moving on to any bidding-related logic.
+
+\section{Sharing (Optional)}
+I would be open to sharing the final project with future classes once it is more complete.
+
+At this point, I have not shared project materials publicly online yet, but I may do that later depending on how development goes.
+
+Another idea I have for future development is to make this into a SaaS (Software as a Service) business to charge others to use my argentic system for their own personal automated bidder.
+
+\end{document}
