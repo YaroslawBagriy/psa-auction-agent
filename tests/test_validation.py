@@ -10,7 +10,7 @@ def _build_listing(**overrides) -> Listing:
     payload = {
         "listing_id": "1001",
         "title": "Pokemon Charizard PSA 10",
-        "seller_name": "psa-dna",
+        "seller_name": "psa",
         "url": "https://www.ebay.com/itm/1001",
         "is_auction": True,
         "current_price": 120.0,

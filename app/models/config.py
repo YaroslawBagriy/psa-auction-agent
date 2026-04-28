@@ -44,7 +44,7 @@ class SearchConfig(BaseModel):
     target_rules: TargetRules
     bid_guardrails: BidGuardrails = Field(default_factory=BidGuardrails)
     dry_run: bool = True
-    official_seller_names: set[str] = Field(default_factory=lambda: {"psa-dna"})
+    official_seller_names: set[str] = Field(default_factory=lambda: {"psa"})
     scan_limit: int = Field(default=100, ge=1)
     poll_interval_minutes: int = Field(default=15, ge=1)
     run_label: str | None = None
@@ -61,7 +61,7 @@ class SearchConfig(BaseModel):
     @classmethod
     def normalize_seller_names(cls, value: object) -> object:
         if value is None:
-            return {"psa-dna"}
+            return {"psa"}
         if isinstance(value, (set, list, tuple)):
             return {str(item).strip().lower() for item in value}
         return value

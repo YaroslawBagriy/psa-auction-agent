@@ -18,11 +18,7 @@ from app.agents.auction_search_agent import (
     HeuristicAuctionSearchEngine,
     OpenAIAuctionSearchEngine,
 )
-from app.agents.bidding_agent import BiddingAgent, DryRunBidExecutor, RealEbayBidExecutor
-from app.agents.parsing_agent import ParsingAgent
-from app.agents.scanner_agent import ScannerAgent
 from app.agents.supervisor_agent import SupervisorAgent
-from app.agents.validation_agent import ValidationAgent
 from app.clients.ebay import MockEbayClient, OfficialEbayApiClient
 from app.models.config import SearchConfig, TargetRules
 from app.models.pokemon import Pokemon
@@ -31,6 +27,9 @@ from app.services.bid_guardrails import BidGuardrailService
 from app.services.listing_parser import ListingParser
 from app.services.listing_validation import ListingValidationService
 from app.storage.sqlite import SQLiteStorage
+from app.tools.bid_execution_tool import BidExecutionTool, DryRunBidExecutor, RealEbayBidExecutor
+from app.tools.listing_preparation_tool import ListingPreparationTool
+from app.tools.scanner_tool import ScannerTool
 from app.utils.logging import configure_logging
 
 LOGGER = logging.getLogger(__name__)
@@ -123,7 +122,16 @@ def run_mvp(
             dry_run,
         )
         ebay_client = (
-            OfficialEbayApiClient(app_id=os.getenv("EBAY_APP_ID", ""))
+            OfficialEbayApiClient(
+                app_id=os.getenv("EBAY_APP_ID", ""),
+                client_id=os.getenv("EBAY_CLIENT_ID"),
+                client_secret=os.getenv("EBAY_CLIENT_SECRET"),
+                access_token=os.getenv("EBAY_ACCESS_TOKEN"),
+                official_seller_name=os.getenv("EBAY_OFFICIAL_SELLER_NAME", "psa"),
+                marketplace_id=os.getenv("EBAY_MARKETPLACE_ID", "EBAY_US"),
+                environment=os.getenv("EBAY_ENVIRONMENT", "production"),
+                enrich_listing_page=_env_flag("EBAY_ENRICH_LISTING_PAGE", True),
+            )
             if resolved_use_live_ebay
             else MockEbayClient(ebay_sample)
         )
@@ -131,28 +139,36 @@ def run_mvp(
         auction_search_engine = _build_auction_search_engine(
             use_openai_search_agent=resolved_use_openai_search_agent
         )
-        bid_executor = DryRunBidExecutor() if dry_run else RealEbayBidExecutor()
+        bid_executor = (
+            DryRunBidExecutor()
+            if dry_run
+            else RealEbayBidExecutor(
+                user_access_token=os.getenv("EBAY_USER_ACCESS_TOKEN"),
+                environment=os.getenv("EBAY_ENVIRONMENT", "production"),
+                site_id=os.getenv("EBAY_TRADING_SITE_ID", "0"),
+                compatibility_level=os.getenv("EBAY_TRADING_COMPATIBILITY_LEVEL", "1423"),
+            )
+        )
 
-        scanner_agent = ScannerAgent(client=ebay_client, storage=storage)
-        parsing_agent = ParsingAgent(parser=ListingParser())
-        validation_agent = ValidationAgent(
-            service=ListingValidationService(),
+        scanner_tool = ScannerTool(client=ebay_client, storage=storage)
+        listing_preparation_tool = ListingPreparationTool(
+            parser=ListingParser(),
+            validator=ListingValidationService(),
             storage=storage,
         )
         auction_search_agent = AuctionSearchAgent(storage=storage, engine=auction_search_engine)
         analysis_agent = AnalysisAgent(storage=storage, engine=analysis_engine)
-        bidding_agent = BiddingAgent(
+        bid_execution_tool = BidExecutionTool(
             storage=storage,
             guardrail_service=BidGuardrailService(storage=storage),
             executor=bid_executor,
         )
         supervisor_agent = SupervisorAgent(
-            scanner_agent=scanner_agent,
-            parsing_agent=parsing_agent,
-            validation_agent=validation_agent,
+            scanner_tool=scanner_tool,
+            listing_preparation_tool=listing_preparation_tool,
             auction_search_agent=auction_search_agent,
             analysis_agent=analysis_agent,
-            bidding_agent=bidding_agent,
+            bid_execution_tool=bid_execution_tool,
             storage=storage,
         )
         return supervisor_agent.run(search_config=search_config)

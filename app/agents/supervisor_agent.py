@@ -6,14 +6,13 @@ from typing import Any
 from app.agents.analysis_agent import AnalysisAgent
 from app.agents.auction_search_agent import AuctionSearchAgent
 from app.agents.base import BaseAgent
-from app.agents.bidding_agent import BiddingAgent
-from app.agents.parsing_agent import ParsingAgent
-from app.agents.scanner_agent import ScannerAgent
-from app.agents.validation_agent import ValidationAgent
 from app.models.config import SearchConfig
 from app.models.listing import Listing
 from app.models.state import ListingWorkflowResult, WorkflowSummary
 from app.storage.sqlite import SQLiteStorage
+from app.tools.bid_execution_tool import BidExecutionTool
+from app.tools.listing_preparation_tool import ListingPreparationTool
+from app.tools.scanner_tool import ScannerTool
 
 
 class SupervisorAgent(BaseAgent):
@@ -21,21 +20,19 @@ class SupervisorAgent(BaseAgent):
 
     def __init__(
         self,
-        scanner_agent: ScannerAgent,
-        parsing_agent: ParsingAgent,
-        validation_agent: ValidationAgent,
+        scanner_tool: ScannerTool,
+        listing_preparation_tool: ListingPreparationTool,
         auction_search_agent: AuctionSearchAgent,
         analysis_agent: AnalysisAgent,
-        bidding_agent: BiddingAgent,
+        bid_execution_tool: BidExecutionTool,
         storage: SQLiteStorage,
     ) -> None:
         super().__init__()
-        self.scanner_agent = scanner_agent
-        self.parsing_agent = parsing_agent
-        self.validation_agent = validation_agent
+        self.scanner_tool = scanner_tool
+        self.listing_preparation_tool = listing_preparation_tool
         self.auction_search_agent = auction_search_agent
         self.analysis_agent = analysis_agent
-        self.bidding_agent = bidding_agent
+        self.bid_execution_tool = bid_execution_tool
         self.storage = storage
         self.chain = self._build_chain()
 
@@ -43,10 +40,10 @@ class SupervisorAgent(BaseAgent):
         from langchain_core.runnables import RunnableLambda
 
         return (
-            RunnableLambda(self._scan_and_validate_stage)
+            RunnableLambda(self._scan_and_validate_stage).with_config(run_name="scanner_and_preparation_tools")
             | RunnableLambda(self._auction_search_stage)
             | RunnableLambda(self._market_analysis_stage)
-            | RunnableLambda(self._bidding_stage)
+            | RunnableLambda(self._bidding_stage).with_config(run_name="bid_execution_tool")
         )
 
     def run(self, search_config: SearchConfig) -> WorkflowSummary:
@@ -63,35 +60,12 @@ class SupervisorAgent(BaseAgent):
         run_id: str = state["run_id"]
         search_config: SearchConfig = state["search_config"]
 
-        raw_listings = self.scanner_agent.scan(run_id=run_id, search_config=search_config)
-        results: list[ListingWorkflowResult] = []
-        results_by_listing_id: dict[str, ListingWorkflowResult] = {}
-        validated_listings: list[Listing] = []
-
-        for raw_listing in raw_listings:
-            try:
-                result = ListingWorkflowResult(raw_listing=raw_listing)
-                pre_validation = self.validation_agent.pre_validate(raw_listing, search_config)
-                result.pre_validation = pre_validation
-                if pre_validation.passed:
-                    listing = self.parsing_agent.run(raw_listing)
-                    result.listing = listing
-                    validation = self.validation_agent.validate(
-                        run_id=run_id,
-                        listing=listing,
-                        search_config=search_config,
-                    )
-                    result.validation = validation
-                    if validation.passed:
-                        validated_listings.append(listing)
-                results.append(result)
-                results_by_listing_id[raw_listing.listing_id] = result
-            except Exception as exc:  # pragma: no cover - defensive fallback
-                self.logger.exception("Validation failed for listing %s", raw_listing.listing_id)
-                self.storage.record_error(run_id, raw_listing.listing_id, "validation", str(exc))
-                failed = ListingWorkflowResult(raw_listing=raw_listing, errors=[str(exc)])
-                results.append(failed)
-                results_by_listing_id[raw_listing.listing_id] = failed
+        raw_listings = self.scanner_tool.run(run_id=run_id, search_config=search_config)
+        results, results_by_listing_id, validated_listings = self.listing_preparation_tool.run(
+            run_id=run_id,
+            raw_listings=raw_listings,
+            search_config=search_config,
+        )
 
         state.update(
             {
@@ -166,7 +140,7 @@ class SupervisorAgent(BaseAgent):
                 continue
             workflow_result = results_by_listing_id[listing.listing_id]
             try:
-                bid_decision, bid_execution = self.bidding_agent.run(
+                bid_decision, bid_execution = self.bid_execution_tool.run(
                     run_id=run_id,
                     listing=listing,
                     analysis=analysis,

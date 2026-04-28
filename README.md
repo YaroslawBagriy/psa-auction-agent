@@ -13,7 +13,7 @@ The project is intentionally narrow:
 - auctions must be within the last 10 minutes before ending
 - the script polls every 15 minutes in continuous mode
 - dry-run bidding supported now
-- live eBay API bidding is stubbed for later wiring
+- live eBay Browse API fetching and Trading API bid execution hooks are implemented behind explicit credentials
 
 ## Architecture
 
@@ -21,17 +21,19 @@ This is a true multi-agent MVP from day one, not a monolithic pipeline.
 
 Agent roles:
 
-- `ScannerAgent`: fetches raw listings from an eBay client adapter
-- `ValidationAgent`: handles raw pre-validation and parsed scope/rule validation
-- `ParsingAgent`: normalizes titles and extracts structured listing details
 - `AuctionSearchAgent`: uses a LangChain prompt to choose which validated eBay listing links should move forward
 - `AnalysisAgent`: uses a LangChain prompt to estimate market value, assess price trend direction, and produce a max bid for each selected listing
-- `BiddingAgent`: applies deterministic bid guardrails and executes dry-run bids
 - `SupervisorAgent`: coordinates the LangChain runnable chain and agent handoffs
+
+Deterministic tools:
+
+- `ScannerTool`: fetches raw listings from the configured eBay client adapter
+- `ListingPreparationTool`: parses listings and applies hard scope filters before any LLM call
+- `BidExecutionTool`: applies deterministic guardrails and executes dry-run or real bid hooks
 
 Orchestration:
 
-- The supervisor performs deterministic scanning, parsing, and scope filtering first, then hands the surviving listings to two prompt-driven agents: auction search and market analysis.
+- The supervisor performs deterministic scanning, parsing, and scope filtering through LangChain runnable tool stages, then hands the surviving listings to two prompt-driven agents: auction search and market analysis.
 - The end-to-end cycle is wired as a LangChain runnable chain inside [app/agents/supervisor_agent.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/agents/supervisor_agent.py).
 - Deterministic Python handles ingestion, parsing helpers, scope filters, the 10-minute cutoff, persistence, guardrails, and bid execution mechanics.
 - The prompt agents use LangChain runnable composition in the `prompt | llm.with_structured_output(...)` style, with OpenAI-backed structured-output paths and local heuristic fallbacks so the MVP still runs without credentials.
@@ -46,6 +48,7 @@ app/
   prompts/
   services/
   storage/
+  tools/
   utils/
   workflows/
 data/
@@ -59,6 +62,9 @@ Key files:
 - [scripts/run_mvp.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/scripts/run_mvp.py): runnable local script
 - [data/sample_ebay_listings.json](/Users/yaroslawbagriy/Dev/psa-auction-agent/data/sample_ebay_listings.json): mock PSA/eBay listing payloads
 - [app/storage/sqlite.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/storage/sqlite.py): SQLite persistence for listings, analysis, bids, and errors
+- [app/tools/scanner_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/scanner_tool.py): deterministic listing ingestion tool used by the LangChain chain
+- [app/tools/listing_preparation_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/listing_preparation_tool.py): deterministic parsing and validation tool
+- [app/tools/bid_execution_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/bid_execution_tool.py): deterministic bidding guardrail and execution tool
 - [app/prompts/auction_search_prompt.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/prompts/auction_search_prompt.py): auction-search prompt that selects listing links
 - [app/prompts/analysis_prompt.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/prompts/analysis_prompt.py): market-analysis/max-bid prompt
 
@@ -141,6 +147,15 @@ If `OPENAI_API_KEY` is set, the OpenAI-backed prompt agents are enabled automati
 
 The default run uses mock eBay data, SQLite persistence, and heuristic fallbacks for the prompt agents when no OpenAI key is configured. The sample eBay data includes market-context snapshots and relative end times so the 10-minute auction window and bidding logic can be exercised locally.
 
+Listing ingestion is not LLM scraping today. In dry-run mode, `MockEbayClient` loads [data/sample_ebay_listings.json](/Users/yaroslawbagriy/Dev/psa-auction-agent/data/sample_ebay_listings.json). In live mode, [app/clients/ebay.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/clients/ebay.py) uses the eBay Browse API to search PSA's official `/str/psa` seller account for auction listings and then enriches item details. The eBay seller username for that store is `psa`, so the live Browse API filter is `sellers:{psa},buyingOptions:{AUCTION}`. Optional listing-page enrichment only looks for the literal `"In the PSA Vault"` phrase because that signal may appear on the listing page rather than the title.
+
+Live eBay settings:
+
+- `USE_LIVE_EBAY=true`
+- `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` mint an application token for Browse API calls, or `EBAY_ACCESS_TOKEN` can provide a pre-minted application token.
+- `EBAY_USER_ACCESS_TOKEN` is required for live bid placement through the eBay Trading API `PlaceOffer` call.
+- `EBAY_ENVIRONMENT=sandbox` switches both Browse and Trading API endpoints to sandbox.
+
 ## Tests
 
 Run the tests with:
@@ -157,13 +172,14 @@ Current coverage includes:
 - validation and allow-list behavior
 - end-to-end dry-run workflow behavior against sample data
 
-## What Is Stubbed
+## Live Integration Notes
 
 The code is structured so live integrations can be added without rewriting the architecture:
 
-- [app/clients/ebay.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/clients/ebay.py): `OfficialEbayApiClient` is a TODO stub for authenticated PSA/eBay API integration
+- [app/clients/ebay.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/clients/ebay.py): `OfficialEbayApiClient` uses OAuth client credentials and Browse API search/getItem calls
 - live market context enrichment is still a TODO; the second prompt agent currently reasons over listing data plus supplied market context instead of a dedicated external pricing source
-- [app/agents/bidding_agent.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/agents/bidding_agent.py): `RealEbayBidExecutor` is a TODO stub for live bidding
+- [app/tools/bid_execution_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/bid_execution_tool.py): `RealEbayBidExecutor` posts Trading API `PlaceOffer` XML when `dry_run=False` and `EBAY_USER_ACCESS_TOKEN` is configured
+- eBay notes that new access to the legacy `PlaceOffer` feature is restricted, so production live bidding may require approval or a different eBay buying integration depending on your developer account
 
 ## Notes
 
