@@ -23,6 +23,11 @@ class AnalysisResult(BaseModel):
     trend_outlook: Literal["upward", "steady", "downward", "uncertain"]
     reasoning: str
     risk_flags: list[str] = Field(default_factory=list)
+    active_listing_count: int | None = None
+    sold_listing_count: int | None = None
+    sell_through_rate: float | None = None
+    recent_sold_prices: list[float] = Field(default_factory=list)
+    market_evidence: str | None = None
 
 
 class MarketAnalysisBatchResult(BaseModel):

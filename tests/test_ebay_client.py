@@ -70,7 +70,11 @@ def test_official_ebay_client_fetches_and_maps_auction_listings() -> None:
         session=session,
     )
 
-    listings = client.fetch_psa_listings(limit=1)
+    listings = client.fetch_psa_listings(
+        limit=1,
+        max_current_price=1500.0,
+        currency="USD",
+    )
 
     assert len(listings) == 1
     listing = listings[0]
@@ -83,7 +87,31 @@ def test_official_ebay_client_fetches_and_maps_auction_listings() -> None:
     assert listing.item_specifics["Set"] == "Phantasmal Flames"
     assert session.posts[0][0].endswith("/identity/v1/oauth2/token")
     search_params = session.gets[0][1]["params"]
-    assert search_params["filter"] == "sellers:{psa},buyingOptions:{AUCTION}"
+    assert "sellers:{psa}" in search_params["filter"]
+    assert "buyingOptions:{AUCTION}" in search_params["filter"]
+    assert "itemEndDate:[" not in search_params["filter"]
+    assert "price:[..1500.00]" in search_params["filter"]
+    assert "priceCurrency:USD" in search_params["filter"]
+    assert search_params["sort"] == "endingSoonest"
+
+
+def test_official_ebay_client_adds_end_date_filter_only_when_configured() -> None:
+    session = FakeSession()
+    client = OfficialEbayApiClient(
+        client_id="client-id",
+        client_secret="client-secret",
+        session=session,
+    )
+
+    client.fetch_psa_listings(
+        limit=1,
+        max_minutes_remaining=10,
+        max_current_price=1500.0,
+        currency="USD",
+    )
+
+    search_params = session.gets[0][1]["params"]
+    assert "itemEndDate:[" in search_params["filter"]
 
 
 def test_official_ebay_client_defaults_to_psa_store_seller() -> None:

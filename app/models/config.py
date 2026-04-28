@@ -11,7 +11,7 @@ class TargetRules(BaseModel):
     allowed_sets: set[str] = Field(default_factory=set)
     max_current_price: float | None = None
     min_minutes_remaining: int | None = None
-    max_minutes_remaining: int | None = 10
+    max_minutes_remaining: int | None = None
 
     @field_validator("allowed_grades", mode="before")
     @classmethod

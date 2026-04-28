@@ -25,7 +25,13 @@ class EbayApiError(RuntimeError):
 
 class EbayClient(ABC):
     @abstractmethod
-    def fetch_psa_listings(self, limit: int | None = None) -> list[RawListing]:
+    def fetch_psa_listings(
+        self,
+        limit: int | None = None,
+        max_minutes_remaining: int | None = None,
+        max_current_price: float | None = None,
+        currency: str = "USD",
+    ) -> list[RawListing]:
         raise NotImplementedError
 
 
@@ -33,7 +39,13 @@ class MockEbayClient(EbayClient):
     def __init__(self, sample_path: Path) -> None:
         self.sample_path = sample_path
 
-    def fetch_psa_listings(self, limit: int | None = None) -> list[RawListing]:
+    def fetch_psa_listings(
+        self,
+        limit: int | None = None,
+        max_minutes_remaining: int | None = None,
+        max_current_price: float | None = None,
+        currency: str = "USD",
+    ) -> list[RawListing]:
         with self.sample_path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
 
@@ -69,6 +81,7 @@ class OfficialEbayApiClient(EbayClient):
         marketplace_id: str = "EBAY_US",
         environment: str = "production",
         enrich_listing_page: bool = True,
+        listing_page_timeout_seconds: float = 5.0,
         session: requests.Session | None = None,
         timeout_seconds: float = 20.0,
     ) -> None:
@@ -79,6 +92,7 @@ class OfficialEbayApiClient(EbayClient):
         self.marketplace_id = marketplace_id
         self.environment = environment.strip().lower()
         self.enrich_listing_page = enrich_listing_page
+        self.listing_page_timeout_seconds = listing_page_timeout_seconds
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -94,14 +108,42 @@ class OfficialEbayApiClient(EbayClient):
     def oauth_url(self) -> str:
         return f"{self.api_base_url}/identity/v1/oauth2/token"
 
-    def fetch_psa_listings(self, limit: int | None = None) -> list[RawListing]:
+    def fetch_psa_listings(
+        self,
+        limit: int | None = None,
+        max_minutes_remaining: int | None = None,
+        max_current_price: float | None = None,
+        currency: str = "USD",
+    ) -> list[RawListing]:
         target_limit = limit or 100
+        self.logger.info(
+            "Fetching PSA eBay auction summaries seller=%s limit=%s max_minutes_remaining=%s max_current_price=%s",
+            self.official_seller_name,
+            target_limit,
+            max_minutes_remaining,
+            max_current_price,
+        )
         token = self._get_application_access_token()
-        summaries = self._search_item_summaries(token=token, limit=target_limit)
+        summaries = self._search_item_summaries(
+            token=token,
+            limit=target_limit,
+            max_minutes_remaining=max_minutes_remaining,
+            max_current_price=max_current_price,
+            currency=currency,
+        )
+        self.logger.info("eBay Browse search returned %s summaries", len(summaries))
         listings: list[RawListing] = []
 
-        for summary in summaries:
+        for index, summary in enumerate(summaries, start=1):
             try:
+                title = str(summary.get("title") or "")
+                self.logger.info(
+                    "Enriching eBay listing %s/%s item_id=%s title=%s",
+                    index,
+                    len(summaries),
+                    summary.get("itemId") or summary.get("legacyItemId"),
+                    title[:120],
+                )
                 detail = self._get_item_detail(token=token, item_id=str(summary["itemId"]))
                 page_vault_text = self._fetch_listing_page_vault_text(summary.get("itemWebUrl"))
                 listing = self._map_listing(summary=summary, detail=detail, page_vault_text=page_vault_text)
@@ -148,19 +190,31 @@ class OfficialEbayApiClient(EbayClient):
         self._token_expires_at = time() + max(int(payload.get("expires_in", 7200)) - 60, 60)
         return self.access_token
 
-    def _search_item_summaries(self, token: str, limit: int) -> list[dict[str, Any]]:
+    def _search_item_summaries(
+        self,
+        token: str,
+        limit: int,
+        max_minutes_remaining: int | None = None,
+        max_current_price: float | None = None,
+        currency: str = "USD",
+    ) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         offset = 0
         page_limit = min(max(limit, 1), 200)
+        filter_value = self._build_search_filter(
+            max_minutes_remaining=max_minutes_remaining,
+            max_current_price=max_current_price,
+            currency=currency,
+        )
         while len(items) < limit:
             response = self.session.get(
                 f"{self.api_base_url}/buy/browse/v1/item_summary/search",
                 headers=self._browse_headers(token),
                 params={
                     "q": "Pokemon PSA",
-                    "filter": f"sellers:{{{self.official_seller_name}}},buyingOptions:{{AUCTION}}",
+                    "filter": filter_value,
                     "fieldgroups": "EXTENDED",
-                    "sort": "endTime",
+                    "sort": "endingSoonest",
                     "limit": str(min(page_limit, limit - len(items))),
                     "offset": str(offset),
                 },
@@ -170,10 +224,45 @@ class OfficialEbayApiClient(EbayClient):
             payload = response.json()
             page_items = payload.get("itemSummaries") or []
             items.extend(page_items)
+            self.logger.info(
+                "Fetched %s eBay summary rows from offset=%s total_so_far=%s",
+                len(page_items),
+                offset,
+                len(items),
+            )
             if len(page_items) == 0 or not payload.get("next"):
                 break
             offset += len(page_items)
         return items
+
+    def _build_search_filter(
+        self,
+        max_minutes_remaining: int | None,
+        max_current_price: float | None,
+        currency: str,
+    ) -> str:
+        filters = [
+            f"sellers:{{{self.official_seller_name}}}",
+            "buyingOptions:{AUCTION}",
+        ]
+
+        if max_minutes_remaining is not None:
+            start_time = datetime.now(UTC)
+            end_time = start_time + timedelta(minutes=max_minutes_remaining)
+            filters.append(
+                "itemEndDate:["
+                f"{self._format_ebay_datetime(start_time)}..{self._format_ebay_datetime(end_time)}"
+                "]"
+            )
+
+        if max_current_price is not None:
+            filters.append(f"price:[..{max_current_price:.2f}]")
+            filters.append(f"priceCurrency:{currency}")
+
+        return ",".join(filters)
+
+    def _format_ebay_datetime(self, value: datetime) -> str:
+        return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     def _get_item_detail(self, token: str, item_id: str) -> dict[str, Any]:
         response = self.session.get(
@@ -193,7 +282,7 @@ class OfficialEbayApiClient(EbayClient):
             response = self.session.get(
                 item_web_url,
                 headers={"User-Agent": "psa-pokemon-bidder/0.1"},
-                timeout=self.timeout_seconds,
+                timeout=self.listing_page_timeout_seconds,
             )
             if getattr(response, "status_code", 200) >= 400:
                 return None

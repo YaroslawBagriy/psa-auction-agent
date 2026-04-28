@@ -66,6 +66,11 @@ class SupervisorAgent(BaseAgent):
             raw_listings=raw_listings,
             search_config=search_config,
         )
+        self.logger.info(
+            "Scan/preparation stage complete raw=%s validated=%s",
+            len(raw_listings),
+            len(validated_listings),
+        )
 
         state.update(
             {
@@ -107,6 +112,7 @@ class SupervisorAgent(BaseAgent):
                 "search_result": search_result,
             }
         )
+        self.logger.info("Auction-search stage complete selected=%s", len(selected_listings))
         return state
 
     def _market_analysis_stage(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -125,6 +131,7 @@ class SupervisorAgent(BaseAgent):
             results_by_listing_id[listing_id].analysis = analysis
 
         state["analysis_batch"] = analysis_batch
+        self.logger.info("Market-analysis stage complete analyses=%s", len(analysis_batch.analyses))
         return state
 
     def _bidding_stage(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -148,11 +155,18 @@ class SupervisorAgent(BaseAgent):
                 )
                 workflow_result.bid_decision = bid_decision
                 workflow_result.bid_execution = bid_execution
+                self.logger.info(
+                    "Bid guardrails listing_id=%s approved=%s reason=%s",
+                    listing.listing_id,
+                    bid_decision.approved,
+                    bid_decision.reason,
+                )
             except Exception as exc:  # pragma: no cover - defensive fallback
                 self.logger.exception("Bidding failed for listing %s", listing.listing_id)
                 self.storage.record_error(run_id, listing.listing_id, "bidding", str(exc))
                 workflow_result.errors.append(str(exc))
 
+        self.logger.info("Bidding stage complete selected=%s", len(selected_listings))
         return state
 
     def _build_summary(self, run_id: str, results: list[ListingWorkflowResult]) -> WorkflowSummary:

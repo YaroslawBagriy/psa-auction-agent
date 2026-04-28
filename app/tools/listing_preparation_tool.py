@@ -49,6 +49,29 @@ class ListingPreparationTool:
                     if validation.passed:
                         self.storage.record_candidate_listing(run_id, listing, validation)
                         validated_listings.append(listing)
+                        self.logger.info(
+                            "Validated candidate listing_id=%s pokemon=%s grade=%s price=%.2f ends_in=%.1fm title=%s",
+                            listing.listing_id,
+                            listing.detected_pokemon.display_name if listing.detected_pokemon else "unknown",
+                            listing.grade_value,
+                            listing.current_price,
+                            listing.minutes_remaining(),
+                            listing.title[:120],
+                        )
+                    else:
+                        self.logger.info(
+                            "Rejected parsed listing_id=%s reasons=%s title=%s",
+                            raw_listing.listing_id,
+                            "; ".join(validation.reasons),
+                            raw_listing.title[:120],
+                        )
+                else:
+                    self.logger.info(
+                        "Rejected raw listing_id=%s reasons=%s title=%s",
+                        raw_listing.listing_id,
+                        "; ".join(pre_validation.reasons),
+                        raw_listing.title[:120],
+                    )
                 results.append(result)
                 results_by_listing_id[raw_listing.listing_id] = result
             except Exception as exc:  # pragma: no cover - defensive workflow boundary
@@ -58,4 +81,9 @@ class ListingPreparationTool:
                 results.append(failed)
                 results_by_listing_id[raw_listing.listing_id] = failed
 
+        self.logger.info(
+            "Listing preparation produced %s validated candidates from %s raw listings",
+            len(validated_listings),
+            len(raw_listings),
+        )
         return results, results_by_listing_id, validated_listings

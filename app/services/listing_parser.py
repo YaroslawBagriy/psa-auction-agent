@@ -125,10 +125,14 @@ class ListingParser:
         return match.group(1)
 
     def detect_pokemon(self, text: str) -> Pokemon | None:
-        for pokemon in Pokemon:
-            for alias in sorted(pokemon.aliases, key=len, reverse=True):
-                if contains_normalized_phrase(text, alias):
-                    return pokemon
+        alias_pairs = [
+            (pokemon, alias)
+            for pokemon in Pokemon
+            for alias in pokemon.aliases
+        ]
+        for pokemon, alias in sorted(alias_pairs, key=lambda item: len(item[1]), reverse=True):
+            if contains_normalized_phrase(text, alias):
+                return pokemon
         return None
 
     def extract_card_number(self, title: str) -> str | None:

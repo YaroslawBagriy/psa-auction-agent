@@ -77,3 +77,21 @@ def test_parser_returns_none_for_unknown_pokemon() -> None:
 
     assert listing.detected_pokemon is None
     assert listing.is_pokemon_related is False
+
+
+def test_parser_prefers_longer_pokemon_aliases() -> None:
+    parser = ListingParser()
+    raw_listing = RawListing(
+        listing_id="mewtwo1",
+        title="Pokemon Mewtwo PSA 10",
+        seller_name="psa",
+        url="https://www.ebay.com/itm/mewtwo1",
+        listing_type="AUCTION",
+        current_price=50.0,
+        end_time=datetime.fromisoformat("2030-01-01T18:00:00+00:00"),
+        category_name="Pokemon TCG",
+    )
+
+    listing = parser.parse(raw_listing)
+
+    assert listing.detected_pokemon == Pokemon.MEWTWO
