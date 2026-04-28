@@ -1,6 +1,6 @@
 from app.models.analysis import AnalysisResult, MarketAnalysisBatchResult, MarketAnalysisInput
-from app.models.bidding import BidDecision, BidExecutionResult
-from app.models.config import BidGuardrails, SearchConfig, TargetRules
+from app.models.bidding import BidActionResult, BidDecision, BidExecutionResult, BiddingMode
+from app.models.config import BidGuardrails, BiddingConfig, SearchConfig, TargetRules
 from app.models.listing import Listing, RawListing
 from app.models.pokemon import Pokemon
 from app.models.review import AuctionSearchDecision, AuctionSearchResult
@@ -11,9 +11,12 @@ __all__ = [
     "AnalysisResult",
     "AuctionSearchDecision",
     "AuctionSearchResult",
+    "BidActionResult",
     "BidDecision",
     "BidExecutionResult",
     "BidGuardrails",
+    "BiddingConfig",
+    "BiddingMode",
     "Listing",
     "ListingWorkflowResult",
     "MarketAnalysisBatchResult",

@@ -20,6 +20,7 @@ from app.agents.auction_search_agent import (
 )
 from app.agents.supervisor_agent import SupervisorAgent
 from app.clients.ebay import MockEbayClient, OfficialEbayApiClient
+from app.models.bidding import BiddingMode
 from app.models.config import SearchConfig, TargetRules
 from app.models.pokemon import Pokemon
 from app.models.state import WorkflowSummary
@@ -27,7 +28,7 @@ from app.services.bid_guardrails import BidGuardrailService
 from app.services.listing_parser import ListingParser
 from app.services.listing_validation import ListingValidationService
 from app.storage.sqlite import SQLiteStorage
-from app.tools.bid_execution_tool import BidExecutionTool, DryRunBidExecutor, RealEbayBidExecutor
+from app.tools.bid_execution_tool import BidExecutionTool, OfficialApiBiddingCredentials, select_bidding_service
 from app.tools.listing_preparation_tool import ListingPreparationTool
 from app.tools.scanner_tool import ScannerTool
 from app.utils.logging import configure_logging
@@ -68,6 +69,22 @@ def _build_search_config(
         dry_run=dry_run,
         scan_limit=100,
         poll_interval_minutes=poll_interval_minutes,
+        bidding={
+            "mode": BiddingMode(os.getenv("EBAY_BIDDING_MODE", BiddingMode.MANUAL.value)),
+            "enabled": _env_flag("EBAY_BIDDING_ENABLED", False),
+            "require_human_confirmation": _env_flag("EBAY_REQUIRE_HUMAN_CONFIRMATION", True),
+            "open_listing_in_browser": _env_flag("EBAY_OPEN_LISTING_ON_MANUAL", False),
+            "browser_automation_enabled": _env_flag("EBAY_BROWSER_AUTOMATION_ENABLED", False),
+            "buy_offer_api_enabled": _env_flag("EBAY_BUY_OFFER_API_ENABLED", False),
+            "buy_offer_scope": os.getenv(
+                "EBAY_BUY_OFFER_SCOPE",
+                "https://api.ebay.com/oauth/api_scope/buy.offer.auction",
+            ),
+            "marketplace_id": os.getenv("EBAY_MARKETPLACE_ID", "EBAY_US"),
+            "environment": os.getenv("EBAY_ENVIRONMENT", "production"),
+            "currency": os.getenv("EBAY_BID_CURRENCY", "USD"),
+            "offer_api_timeout_seconds": float(os.getenv("EBAY_OFFER_API_TIMEOUT_SECONDS", "20")),
+        },
     )
 
 
@@ -87,12 +104,12 @@ def run_mvp(
 
     resolved_use_live_ebay = _env_flag("USE_LIVE_EBAY") if use_live_ebay is None else use_live_ebay
     resolved_use_openai_analysis = (
-        bool(os.getenv("OPENAI_API_KEY")) or _env_flag("USE_OPENAI_ANALYSIS")
+        _env_flag("USE_OPENAI_ANALYSIS")
         if use_openai_analysis is None
         else use_openai_analysis
     )
     resolved_use_openai_search_agent = (
-        bool(os.getenv("OPENAI_API_KEY")) or _env_flag("USE_OPENAI_SEARCH_AGENT")
+        _env_flag("USE_OPENAI_SEARCH_AGENT")
         if use_openai_search_agent is None
         else use_openai_search_agent
     )
@@ -139,15 +156,14 @@ def run_mvp(
         auction_search_engine = _build_auction_search_engine(
             use_openai_search_agent=resolved_use_openai_search_agent
         )
-        bid_executor = (
-            DryRunBidExecutor()
-            if dry_run
-            else RealEbayBidExecutor(
+        bidding_service = select_bidding_service(
+            bidding_config=search_config.bidding,
+            credentials=OfficialApiBiddingCredentials(
+                client_id=os.getenv("EBAY_CLIENT_ID"),
+                client_secret=os.getenv("EBAY_CLIENT_SECRET"),
                 user_access_token=os.getenv("EBAY_USER_ACCESS_TOKEN"),
-                environment=os.getenv("EBAY_ENVIRONMENT", "production"),
-                site_id=os.getenv("EBAY_TRADING_SITE_ID", "0"),
-                compatibility_level=os.getenv("EBAY_TRADING_COMPATIBILITY_LEVEL", "1423"),
-            )
+                user_refresh_token=os.getenv("EBAY_USER_REFRESH_TOKEN"),
+            ),
         )
 
         scanner_tool = ScannerTool(client=ebay_client, storage=storage)
@@ -161,7 +177,7 @@ def run_mvp(
         bid_execution_tool = BidExecutionTool(
             storage=storage,
             guardrail_service=BidGuardrailService(storage=storage),
-            executor=bid_executor,
+            bidding_service=bidding_service,
         )
         supervisor_agent = SupervisorAgent(
             scanner_tool=scanner_tool,

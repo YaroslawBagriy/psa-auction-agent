@@ -69,6 +69,15 @@ class SQLiteStorage:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS bid_action_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                listing_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS bid_attempts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id TEXT NOT NULL,
@@ -149,6 +158,14 @@ class SQLiteStorage:
         )
 
     def record_bid_attempt(self, run_id: str, attempt: BidExecutionResult) -> None:
+        self._insert_payload(
+            "bid_action_results",
+            run_id,
+            attempt.listing_id,
+            attempt.model_dump(mode="json"),
+        )
+        if not attempt.attempted:
+            return
         self._insert_payload(
             "bid_attempts",
             run_id,

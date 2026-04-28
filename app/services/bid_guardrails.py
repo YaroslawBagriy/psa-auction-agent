@@ -21,11 +21,20 @@ class BidGuardrailService:
         approved_max_bid = analysis.recommended_max_bid
         risk_flags = list(analysis.risk_flags)
 
+        if listing.seller_name.strip().lower() not in search_config.official_seller_names:
+            reasons.append("Listing seller does not match the configured official seller allow-list.")
+
+        if listing.minutes_remaining() <= 0:
+            reasons.append("Listing auction has already ended.")
+
         if not analysis.should_bid:
             reasons.append("Analysis agent recommended against bidding.")
 
         if analysis.confidence < search_config.bid_guardrails.confidence_threshold:
             reasons.append("Analysis confidence is below the configured threshold.")
+
+        if any("suspicious" in flag.lower() for flag in risk_flags):
+            reasons.append("Analysis flagged the listing as suspicious.")
 
         if analysis.trend_outlook not in search_config.bid_guardrails.allowed_trend_outlooks:
             reasons.append("Trend outlook is not in the allowed trend outlook set.")

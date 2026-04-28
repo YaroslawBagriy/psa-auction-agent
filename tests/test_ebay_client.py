@@ -75,6 +75,7 @@ def test_official_ebay_client_fetches_and_maps_auction_listings() -> None:
     assert len(listings) == 1
     listing = listings[0]
     assert listing.listing_id == "123456789012"
+    assert listing.ebay_restful_item_id == "v1|123456789012|0"
     assert listing.seller_name == "psa"
     assert listing.listing_type == "AUCTION"
     assert listing.current_price == 120.0

@@ -10,6 +10,7 @@ from app.models.pokemon import Pokemon
 
 class RawListing(BaseModel):
     listing_id: str
+    ebay_restful_item_id: str | None = None
     title: str
     seller_name: str
     url: str
@@ -45,11 +46,13 @@ class RawListing(BaseModel):
 
 class Listing(BaseModel):
     listing_id: str
+    ebay_restful_item_id: str | None = None
     title: str
     seller_name: str
     url: str
     is_auction: bool
     current_price: float
+    currency: str = "USD"
     end_time: datetime
     grading_company: str | None = None
     grade_value: str | None = None

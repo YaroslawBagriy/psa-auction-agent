@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from app.main import run_mvp, run_mvp_loop
+from app.models.bidding import BiddingMode
 from app.models.config import TargetRules
 from app.models.pokemon import Pokemon
 
@@ -23,7 +24,7 @@ def test_run_mvp_dry_run_processes_sample_data(tmp_path: Path) -> None:
     assert summary.selected_link_count == 2
     assert summary.analyses_completed == 2
     assert summary.bids_approved == 1
-    assert summary.bid_attempts == 1
+    assert summary.bid_attempts == 0
 
     approved = [result for result in summary.results if result.bid_decision and result.bid_decision.approved]
     assert len(approved) == 1
@@ -34,6 +35,10 @@ def test_run_mvp_dry_run_processes_sample_data(tmp_path: Path) -> None:
     assert approved[0].search_decision.should_track is True
     assert approved[0].bid_execution is not None
     assert approved[0].bid_execution.dry_run is True
+    assert approved[0].bid_execution.mode == BiddingMode.MANUAL
+    assert approved[0].bid_execution.status == "requires_user_action"
+    assert approved[0].bid_execution.attempted is False
+    assert approved[0].bid_execution.listing_url == "https://www.ebay.com/itm/1001"
 
 
 def test_run_mvp_loop_runs_multiple_cycles_without_sleeping(tmp_path: Path) -> None:

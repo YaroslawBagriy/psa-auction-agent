@@ -30,11 +30,13 @@ class ListingParser:
 
         return Listing(
             listing_id=raw_listing.listing_id,
+            ebay_restful_item_id=raw_listing.ebay_restful_item_id,
             title=raw_listing.title,
             seller_name=raw_listing.seller_name,
             url=raw_listing.url,
             is_auction=raw_listing.is_auction,
             current_price=raw_listing.current_price,
+            currency=raw_listing.currency,
             end_time=raw_listing.end_time,
             grading_company=grading_company,
             grade_value=grade_value,

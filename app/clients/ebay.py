@@ -235,6 +235,7 @@ class OfficialEbayApiClient(EbayClient):
 
         return RawListing(
             listing_id=str(summary.get("legacyItemId") or detail.get("legacyItemId") or summary.get("itemId")),
+            ebay_restful_item_id=self._optional_str(summary.get("itemId") or detail.get("itemId")),
             title=str(summary.get("title") or detail.get("title") or ""),
             seller_name=str(seller.get("username") or self.official_seller_name),
             url=str(summary.get("itemWebUrl") or detail.get("itemWebUrl") or ""),

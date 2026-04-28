@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.bidding import BiddingMode
 from app.models.pokemon import Pokemon
 
 
@@ -39,10 +40,25 @@ class BidGuardrails(BaseModel):
         return value
 
 
+class BiddingConfig(BaseModel):
+    mode: BiddingMode = BiddingMode.MANUAL
+    enabled: bool = False
+    require_human_confirmation: bool = True
+    open_listing_in_browser: bool = False
+    browser_automation_enabled: bool = False
+    buy_offer_api_enabled: bool = False
+    buy_offer_scope: str = "https://api.ebay.com/oauth/api_scope/buy.offer.auction"
+    marketplace_id: str = "EBAY_US"
+    environment: str = "production"
+    currency: str = "USD"
+    offer_api_timeout_seconds: float = 20.0
+
+
 class SearchConfig(BaseModel):
     target_pokemon: list[Pokemon]
     target_rules: TargetRules
     bid_guardrails: BidGuardrails = Field(default_factory=BidGuardrails)
+    bidding: BiddingConfig = Field(default_factory=BiddingConfig)
     dry_run: bool = True
     official_seller_names: set[str] = Field(default_factory=lambda: {"psa"})
     scan_limit: int = Field(default=100, ge=1)
