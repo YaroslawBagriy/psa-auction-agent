@@ -12,6 +12,7 @@ from app.models.state import ListingWorkflowResult, WorkflowSummary
 from app.storage.sqlite import SQLiteStorage
 from app.tools.bid_execution_tool import BidExecutionTool
 from app.tools.listing_preparation_tool import ListingPreparationTool
+from app.tools.market_research_tool import MarketResearchTool
 from app.tools.scanner_tool import ScannerTool
 
 
@@ -23,6 +24,7 @@ class SupervisorAgent(BaseAgent):
         scanner_tool: ScannerTool,
         listing_preparation_tool: ListingPreparationTool,
         auction_search_agent: AuctionSearchAgent,
+        market_research_tool: MarketResearchTool,
         analysis_agent: AnalysisAgent,
         bid_execution_tool: BidExecutionTool,
         storage: SQLiteStorage,
@@ -31,6 +33,7 @@ class SupervisorAgent(BaseAgent):
         self.scanner_tool = scanner_tool
         self.listing_preparation_tool = listing_preparation_tool
         self.auction_search_agent = auction_search_agent
+        self.market_research_tool = market_research_tool
         self.analysis_agent = analysis_agent
         self.bid_execution_tool = bid_execution_tool
         self.storage = storage
@@ -42,6 +45,7 @@ class SupervisorAgent(BaseAgent):
         return (
             RunnableLambda(self._scan_and_validate_stage).with_config(run_name="scanner_and_preparation_tools")
             | RunnableLambda(self._auction_search_stage)
+            | RunnableLambda(self._market_research_stage).with_config(run_name="market_research_tool")
             | RunnableLambda(self._market_analysis_stage)
             | RunnableLambda(self._bidding_stage).with_config(run_name="bid_execution_tool")
         )
@@ -113,6 +117,31 @@ class SupervisorAgent(BaseAgent):
             }
         )
         self.logger.info("Auction-search stage complete selected=%s", len(selected_listings))
+        return state
+
+    def _market_research_stage(self, state: dict[str, Any]) -> dict[str, Any]:
+        run_id: str = state["run_id"]
+        search_config: SearchConfig = state["search_config"]
+        selected_listings: list[Listing] = state.get("selected_listings", [])
+        results_by_listing_id: dict[str, ListingWorkflowResult] = state["results_by_listing_id"]
+
+        enriched_listings, market_research_by_listing_id = self.market_research_tool.run(
+            run_id=run_id,
+            listings=selected_listings,
+            search_config=search_config,
+        )
+        for listing in enriched_listings:
+            workflow_result = results_by_listing_id[listing.listing_id]
+            workflow_result.listing = listing
+            workflow_result.market_research = market_research_by_listing_id.get(listing.listing_id)
+
+        state.update(
+            {
+                "selected_listings": enriched_listings,
+                "market_research_by_listing_id": market_research_by_listing_id,
+            }
+        )
+        self.logger.info("Market-research stage complete researched=%s", len(market_research_by_listing_id))
         return state
 
     def _market_analysis_stage(self, state: dict[str, Any]) -> dict[str, Any]:

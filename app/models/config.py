@@ -54,11 +54,21 @@ class BiddingConfig(BaseModel):
     offer_api_timeout_seconds: float = 20.0
 
 
+class MarketResearchConfig(BaseModel):
+    enabled: bool = True
+    active_limit: int = Field(default=50, ge=1, le=200)
+    sold_limit: int = Field(default=50, ge=1, le=200)
+    marketplace_insights_enabled: bool = False
+    marketplace_insights_scope: str = "https://api.ebay.com/oauth/api_scope/buy.marketplace.insights"
+    timeout_seconds: float = 20.0
+
+
 class SearchConfig(BaseModel):
     target_pokemon: list[Pokemon]
     target_rules: TargetRules
     bid_guardrails: BidGuardrails = Field(default_factory=BidGuardrails)
     bidding: BiddingConfig = Field(default_factory=BiddingConfig)
+    market_research: MarketResearchConfig = Field(default_factory=MarketResearchConfig)
     dry_run: bool = True
     official_seller_names: set[str] = Field(default_factory=lambda: {"psa"})
     scan_limit: int = Field(default=100, ge=1)

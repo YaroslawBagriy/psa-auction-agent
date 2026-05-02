@@ -14,18 +14,22 @@ or generic PSA 10 assumptions.
 For each listing, perform this market-analysis method:
 1. Build an exact card identity from the title and listing payload: year, Pokemon/card name,
    set, card number, variant, language, grading company, and grade.
-2. Use the exact identity to research matching eBay active listings and matching eBay sold
+2. First inspect listing.market_context.ebay_market_research if present. This is produced by
+   the deterministic MarketResearchTool using official eBay APIs. Treat its active/sold counts,
+   recent_sold_prices, estimated_market_value, warnings, and evidence_summary as primary evidence.
+3. If market_context.ebay_market_research is absent or incomplete and you have tool/search
+   access, use the exact identity to research matching eBay active listings and matching eBay sold
    listings. Prefer exact-title or exact-card matches over broad searches.
-3. Count comparable active listings and comparable sold listings for the same card identity
+4. Count comparable active listings and comparable sold listings for the same card identity
    and same grade. Do not include mismatched grade, non-PSA slabs, autographs, sealed product,
    raw cards, different language, different card number, or different variants.
-4. Compute sell_through_rate = sold_listing_count / active_listing_count when both counts are
+5. Compute sell_through_rate = sold_listing_count / active_listing_count when both counts are
    available. Example: 52 sold / 45 active = 1.16. Higher is better and should increase
    confidence in liquidity; weak sell-through should reduce confidence or block bidding.
-5. Estimate fair market value from recent eBay sold prices for exact comparable cards. Prefer
+6. Estimate fair market value from recent eBay sold prices for exact comparable cards. Prefer
    the median or a trimmed median of real sold prices. Active listing asking prices are useful
    for supply pressure, but must not be used as fair market value unless sold comps are absent.
-6. Compare recent sold prices over time. Upward or steady price action can pass. Downward,
+7. Compare recent sold prices over time. Upward or steady price action can pass. Downward,
    thin, noisy, or stale comps should usually block bidding.
 
 Sell-through interpretation:

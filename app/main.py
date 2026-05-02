@@ -20,6 +20,7 @@ from app.agents.auction_search_agent import (
 )
 from app.agents.supervisor_agent import SupervisorAgent
 from app.clients.ebay import MockEbayClient, OfficialEbayApiClient
+from app.clients.ebay_market import MockEbayMarketResearchClient, OfficialEbayMarketResearchClient
 from app.models.bidding import BiddingMode
 from app.models.config import SearchConfig, TargetRules
 from app.models.pokemon import Pokemon
@@ -30,6 +31,7 @@ from app.services.listing_validation import ListingValidationService
 from app.storage.sqlite import SQLiteStorage
 from app.tools.bid_execution_tool import BidExecutionTool, OfficialApiBiddingCredentials, select_bidding_service
 from app.tools.listing_preparation_tool import ListingPreparationTool
+from app.tools.market_research_tool import MarketResearchTool
 from app.tools.scanner_tool import ScannerTool
 from app.utils.logging import configure_logging
 
@@ -96,6 +98,17 @@ def _build_search_config(
             "currency": os.getenv("EBAY_BID_CURRENCY", "USD"),
             "offer_api_timeout_seconds": float(os.getenv("EBAY_OFFER_API_TIMEOUT_SECONDS", "20")),
         },
+        market_research={
+            "enabled": _env_flag("EBAY_MARKET_RESEARCH_ENABLED", True),
+            "active_limit": int(os.getenv("EBAY_MARKET_RESEARCH_ACTIVE_LIMIT", "50")),
+            "sold_limit": int(os.getenv("EBAY_MARKET_RESEARCH_SOLD_LIMIT", "50")),
+            "marketplace_insights_enabled": _env_flag("EBAY_MARKETPLACE_INSIGHTS_ENABLED", False),
+            "marketplace_insights_scope": os.getenv(
+                "EBAY_MARKETPLACE_INSIGHTS_SCOPE",
+                "https://api.ebay.com/oauth/api_scope/buy.marketplace.insights",
+            ),
+            "timeout_seconds": float(os.getenv("EBAY_MARKET_RESEARCH_TIMEOUT_SECONDS", "20")),
+        },
     )
 
 
@@ -155,6 +168,19 @@ def run_mvp(
             if resolved_use_live_ebay
             else MockEbayClient(ebay_sample)
         )
+        market_research_client = (
+            OfficialEbayMarketResearchClient(
+                client_id=os.getenv("EBAY_CLIENT_ID"),
+                client_secret=os.getenv("EBAY_CLIENT_SECRET"),
+                access_token=os.getenv("EBAY_ACCESS_TOKEN"),
+                marketplace_insights_access_token=os.getenv("EBAY_MARKETPLACE_INSIGHTS_ACCESS_TOKEN"),
+                marketplace_id=os.getenv("EBAY_MARKETPLACE_ID", "EBAY_US"),
+                environment=os.getenv("EBAY_ENVIRONMENT", "production"),
+                timeout_seconds=search_config.market_research.timeout_seconds,
+            )
+            if resolved_use_live_ebay
+            else MockEbayMarketResearchClient()
+        )
         resolved_analysis_engine = analysis_engine or _build_analysis_engine()
         resolved_auction_search_engine = auction_search_engine or _build_auction_search_engine()
         bidding_service = select_bidding_service(
@@ -174,6 +200,7 @@ def run_mvp(
             storage=storage,
         )
         auction_search_agent = AuctionSearchAgent(storage=storage, engine=resolved_auction_search_engine)
+        market_research_tool = MarketResearchTool(client=market_research_client, storage=storage)
         analysis_agent = AnalysisAgent(storage=storage, engine=resolved_analysis_engine)
         bid_execution_tool = BidExecutionTool(
             storage=storage,
@@ -184,6 +211,7 @@ def run_mvp(
             scanner_tool=scanner_tool,
             listing_preparation_tool=listing_preparation_tool,
             auction_search_agent=auction_search_agent,
+            market_research_tool=market_research_tool,
             analysis_agent=analysis_agent,
             bid_execution_tool=bid_execution_tool,
             storage=storage,

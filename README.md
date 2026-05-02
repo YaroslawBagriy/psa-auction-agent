@@ -30,11 +30,12 @@ Deterministic tools:
 
 - `ScannerTool`: fetches raw listings from the configured eBay client adapter
 - `ListingPreparationTool`: parses listings and applies hard scope filters before any LLM call
+- `MarketResearchTool`: fetches official eBay active/sold comp evidence and attaches it before analysis
 - `BidExecutionTool`: applies deterministic guardrails and prepares a safe bid action result
 
 Orchestration:
 
-- The supervisor performs deterministic scanning, parsing, and scope filtering through LangChain runnable tool stages, then hands the surviving listings to two prompt-driven agents: auction search and market analysis.
+- The supervisor performs deterministic scanning, parsing, scope filtering, and market-comp enrichment through LangChain runnable tool stages, then hands the enriched listings to two prompt-driven agents: auction search and market analysis.
 - The end-to-end cycle is wired as a LangChain runnable chain inside [app/agents/supervisor_agent.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/agents/supervisor_agent.py).
 - Deterministic Python handles ingestion, parsing helpers, scope filters, persistence, guardrails, and safe bid-action preparation.
 - The prompt agents use LangChain runnable composition in the `prompt | llm.with_structured_output(...)` style. Auction selection and market/max-bid analysis always go through the LLM; there is no runtime heuristic fallback.
@@ -65,6 +66,7 @@ Key files:
 - [app/storage/sqlite.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/storage/sqlite.py): SQLite persistence for listings, analysis, bids, and errors
 - [app/tools/scanner_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/scanner_tool.py): deterministic listing ingestion tool used by the LangChain chain
 - [app/tools/listing_preparation_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/listing_preparation_tool.py): deterministic parsing and validation tool
+- [app/tools/market_research_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/market_research_tool.py): official eBay active/sold comp enrichment tool
 - [app/tools/bid_execution_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/bid_execution_tool.py): deterministic bidding guardrail and safe bid-action service
 - [app/prompts/auction_search_prompt.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/prompts/auction_search_prompt.py): auction-search prompt that selects listing links
 - [app/prompts/analysis_prompt.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/prompts/analysis_prompt.py): comp-driven market-analysis/max-bid prompt
@@ -78,6 +80,7 @@ The main typed models live under [app/models](/Users/yaroslawbagriy/Dev/psa-auct
 - `SearchConfig`: runtime search/bid configuration
 - `RawListing` and `Listing`: ingestion and normalized listing models
 - `AuctionSearchDecision` and `AuctionSearchResult`
+- `MarketResearchResult`: active listings, sold comps, sell-through rate, recent sold prices, and evidence summary
 - `MarketAnalysisInput`, `MarketAnalysisBatchResult`, and `AnalysisResult`
 - `BidDecision`, `BidActionResult`, and `BidExecutionResult`
 - `WorkflowSummary`
@@ -116,10 +119,11 @@ The implemented MVP flow is:
 3. parse normalized listing details
 4. validate PSA grading, Pokemon allow-list, explicit listing-page vault evidence, and target rules
 5. send validated listings to the `AuctionSearchAgent` prompt and collect the eBay links it selects
-6. send each selected listing batch to the `AnalysisAgent` prompt to estimate market value, trend outlook, and max bid
-7. apply deterministic bid guardrails
-8. create a manual bid action result, or a gated official eBay Offer API proxy-bid result when explicitly enabled, with the title, item ID, current price, end time, estimated market value, max bid, margin, reasoning, and eBay URL
-9. persist every major step to SQLite
+6. fetch official eBay active/sold market comp evidence for selected listings
+7. send enriched listing batches to the `AnalysisAgent` prompt to estimate market value, trend outlook, and max bid
+8. apply deterministic bid guardrails
+9. create a manual bid action result, or a gated official eBay Offer API proxy-bid result when explicitly enabled, with the title, item ID, current price, end time, estimated market value, max bid, margin, reasoning, and eBay URL
+10. persist every major step to SQLite
 
 ## Running Locally
 
@@ -173,6 +177,11 @@ Live eBay settings:
 - `EBAY_SCAN_LIMIT=100` controls how many PSA listings the scanner fetches per cycle; lower it for quick manual checks.
 - `EBAY_LISTING_PAGE_TIMEOUT_SECONDS=5` controls the per-listing page enrichment timeout used for `"In the PSA Vault"` detection.
 - `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` mint an application token for Browse API calls, or `EBAY_ACCESS_TOKEN` can provide a pre-minted application token.
+- `EBAY_MARKET_RESEARCH_ENABLED=true` enables the MarketResearchTool stage.
+- `EBAY_MARKET_RESEARCH_ACTIVE_LIMIT=50` controls how many active eBay comps are sampled per selected listing.
+- `EBAY_MARKET_RESEARCH_SOLD_LIMIT=50` controls how many sold comps are sampled per selected listing.
+- `EBAY_MARKETPLACE_INSIGHTS_ENABLED=true` enables sold-comp lookup through eBay's limited-release Buy Marketplace Insights API after eBay grants the scope.
+- `EBAY_MARKETPLACE_INSIGHTS_SCOPE=https://api.ebay.com/oauth/api_scope/buy.marketplace.insights` is the app-token scope used for official sold-comp research.
 - `EBAY_DEV_ID` can be stored for account reference, but REST Browse and Buy Offer calls use the Client ID and Client Secret.
 - `EBAY_RU_NAME` is required only when generating a user token through eBay's authorization-code flow.
 - `EBAY_OAUTH_SCOPES` controls helper-script token generation. Use `https://api.ebay.com/oauth/api_scope` for public Browse API tokens. Add `https://api.ebay.com/oauth/api_scope/buy.offer.auction` only after eBay grants that scope to the application.
@@ -231,6 +240,7 @@ Current coverage includes:
 
 - title parsing and Pokemon detection
 - PSA Vault detection
+- official eBay active/sold market comp parsing and MarketResearchTool enrichment
 - optional bidding-window validation when explicitly configured
 - validation and allow-list behavior
 - end-to-end dry-run workflow behavior against sample data
@@ -242,7 +252,7 @@ Current coverage includes:
 The code is structured so live integrations can be added without rewriting the architecture:
 
 - [app/clients/ebay.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/clients/ebay.py): `OfficialEbayApiClient` uses OAuth client credentials and Browse API search/getItem calls
-- live market context enrichment is still a TODO; the second prompt agent is now instructed to anchor valuation to exact eBay sold comps, active listing counts, sold listing counts, sell-through rate, and recent sold prices when that evidence is available
+- [app/clients/ebay_market.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/clients/ebay_market.py): `OfficialEbayMarketResearchClient` uses Browse API active comps and the limited-release Marketplace Insights item-sales endpoint for sold comps
 - [app/clients/ebay_offer.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/clients/ebay_offer.py): `OfficialEbayOfferApiClient` calls only eBay's official Buy Offer API `place_proxy_bid` endpoint
 - [app/tools/bid_execution_tool.py](/Users/yaroslawbagriy/Dev/psa-auction-agent/app/tools/bid_execution_tool.py): `OfficialEbayBiddingService` gates official API bid submission behind config, credentials, dry-run, human-confirmation, and guardrails
 - eBay automated bidding requires official API access. The app does not use website automation, cookie replay, Selenium, Playwright, Puppeteer, or copied browser curl requests to place bids.

@@ -61,6 +61,42 @@ def print_recommendations(summary: WorkflowSummary) -> None:
             or result.bid_decision is not None
         )
     ]
+
+    def active_listing_count(result) -> int | None:
+        if result.analysis and result.analysis.active_listing_count is not None:
+            return result.analysis.active_listing_count
+        if result.market_research:
+            return result.market_research.active_listing_count
+        return None
+
+    def sold_listing_count(result) -> int | None:
+        if result.analysis and result.analysis.sold_listing_count is not None:
+            return result.analysis.sold_listing_count
+        if result.market_research:
+            return result.market_research.sold_listing_count
+        return None
+
+    def sell_through_rate(result) -> float | None:
+        if result.analysis and result.analysis.sell_through_rate is not None:
+            return result.analysis.sell_through_rate
+        if result.market_research:
+            return result.market_research.sell_through_rate
+        return None
+
+    def recent_sold_prices(result) -> list[float]:
+        if result.analysis and result.analysis.recent_sold_prices:
+            return result.analysis.recent_sold_prices
+        if result.market_research:
+            return result.market_research.recent_sold_prices
+        return []
+
+    def market_evidence(result) -> str | None:
+        if result.analysis and result.analysis.market_evidence:
+            return result.analysis.market_evidence
+        if result.market_research:
+            return result.market_research.evidence_summary
+        return None
+
     print(
         json.dumps(
             {
@@ -82,24 +118,14 @@ def print_recommendations(summary: WorkflowSummary) -> None:
                         "estimated_market_value": result.bid_execution.estimated_market_value,
                         "recommended_max_bid": result.bid_execution.recommended_bid,
                         "expected_margin": result.bid_execution.expected_margin,
-                        "active_listing_count": (
-                            result.analysis.active_listing_count if result.analysis else None
-                        ),
-                        "sold_listing_count": (
-                            result.analysis.sold_listing_count if result.analysis else None
-                        ),
-                        "sell_through_rate": (
-                            result.analysis.sell_through_rate if result.analysis else None
-                        ),
-                        "recent_sold_prices": (
-                            result.analysis.recent_sold_prices if result.analysis else []
-                        ),
+                        "active_listing_count": active_listing_count(result),
+                        "sold_listing_count": sold_listing_count(result),
+                        "sell_through_rate": sell_through_rate(result),
+                        "recent_sold_prices": recent_sold_prices(result),
                         "status": result.bid_execution.status,
                         "url": result.bid_execution.listing_url,
                         "reasoning": result.bid_execution.reasoning,
-                        "market_evidence": (
-                            result.analysis.market_evidence if result.analysis else None
-                        ),
+                        "market_evidence": market_evidence(result),
                     }
                     for result in recommendations
                 ],
@@ -125,22 +151,12 @@ def print_recommendations(summary: WorkflowSummary) -> None:
                         "recommended_max_bid": (
                             result.analysis.recommended_max_bid if result.analysis else None
                         ),
-                        "active_listing_count": (
-                            result.analysis.active_listing_count if result.analysis else None
-                        ),
-                        "sold_listing_count": (
-                            result.analysis.sold_listing_count if result.analysis else None
-                        ),
-                        "sell_through_rate": (
-                            result.analysis.sell_through_rate if result.analysis else None
-                        ),
-                        "recent_sold_prices": (
-                            result.analysis.recent_sold_prices if result.analysis else []
-                        ),
+                        "active_listing_count": active_listing_count(result),
+                        "sold_listing_count": sold_listing_count(result),
+                        "sell_through_rate": sell_through_rate(result),
+                        "recent_sold_prices": recent_sold_prices(result),
                         "decision": result.bid_decision.reason if result.bid_decision else None,
-                        "market_evidence": (
-                            result.analysis.market_evidence if result.analysis else None
-                        ),
+                        "market_evidence": market_evidence(result),
                         "url": result.listing.url if result.listing else result.raw_listing.url,
                     }
                     for result in reviewed_auctions

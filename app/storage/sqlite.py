@@ -9,6 +9,7 @@ from typing import Any
 from app.models.analysis import AnalysisResult
 from app.models.bidding import BidDecision, BidExecutionResult
 from app.models.listing import Listing, RawListing
+from app.models.market import MarketResearchResult
 from app.models.review import AuctionSearchDecision
 from app.models.validation import ValidationResult
 
@@ -52,6 +53,15 @@ class SQLiteStorage:
             """,
             """
             CREATE TABLE IF NOT EXISTS analysis_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                listing_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS market_research_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id TEXT NOT NULL,
                 listing_id TEXT NOT NULL,
@@ -147,6 +157,14 @@ class SQLiteStorage:
             run_id,
             listing_id,
             analysis.model_dump(mode="json"),
+        )
+
+    def record_market_research(self, run_id: str, result: MarketResearchResult) -> None:
+        self._insert_payload(
+            "market_research_results",
+            run_id,
+            result.listing_id,
+            result.model_dump(mode="json"),
         )
 
     def record_bid_decision(self, run_id: str, decision: BidDecision) -> None:
