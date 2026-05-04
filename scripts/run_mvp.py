@@ -13,7 +13,7 @@ from app.agents.errors import LLMAgentError
 from app.main import LLMConfigurationError, run_mvp, run_mvp_loop
 from app.models.config import TargetRules
 from app.models.pokemon import Pokemon
-from app.models.state import WorkflowSummary
+from app.models.state import ListingWorkflowResult, WorkflowSummary
 
 
 DEFAULT_TARGET_POKEMON = list(Pokemon)
@@ -44,23 +44,8 @@ def parse_target_pokemon(values: list[str] | None, use_all: bool) -> list[Pokemo
 
 
 def print_recommendations(summary: WorkflowSummary) -> None:
-    recommendations = [
-        result
-        for result in summary.results
-        if result.bid_decision
-        and result.bid_decision.approved
-        and result.bid_execution
-    ]
-    reviewed_auctions = [
-        result
-        for result in summary.results
-        if result.listing is not None
-        and (
-            (result.validation is not None and result.validation.passed)
-            or result.analysis is not None
-            or result.bid_decision is not None
-        )
-    ]
+    recommendations = actionable_auctions(summary)
+    reviewed_auctions = list(summary.results)
 
     def active_listing_count(result) -> int | None:
         if result.analysis and result.analysis.active_listing_count is not None:
@@ -97,6 +82,43 @@ def print_recommendations(summary: WorkflowSummary) -> None:
             return result.market_research.evidence_summary
         return None
 
+    def decision_text(result) -> str | None:
+        if result.bid_decision:
+            return result.bid_decision.reason
+        if result.errors:
+            return "Workflow error: " + "; ".join(result.errors)
+        if result.validation and not result.validation.passed:
+            return "Listing validation rejected this listing: " + "; ".join(result.validation.reasons)
+        if result.pre_validation and not result.pre_validation.passed:
+            return "Pre-validation rejected this listing: " + "; ".join(result.pre_validation.reasons)
+        if result.search_decision and not result.search_decision.should_track:
+            return f"Auction search skipped this listing: {result.search_decision.rationale}"
+        if result.search_decision and result.search_decision.should_track and result.market_research is None:
+            return "Selected for market research, but no market research result was produced."
+        return None
+
+    def pipeline_status(result) -> str:
+        if result.bid_decision and result.bid_decision.approved:
+            return "accepted"
+        return "denied"
+
+    def pipeline_stage(result) -> str | None:
+        if result.bid_decision:
+            return "bid_guardrails"
+        if result.analysis:
+            return "analysis"
+        if result.market_research:
+            return "market_research"
+        if result.search_decision:
+            return "auction_search"
+        if result.validation:
+            return "listing_validation"
+        if result.pre_validation:
+            return "pre_validation"
+        if result.errors:
+            return "error"
+        return None
+
     print(
         json.dumps(
             {
@@ -105,40 +127,46 @@ def print_recommendations(summary: WorkflowSummary) -> None:
                 "candidate_count": summary.candidate_count,
                 "selected_link_count": summary.selected_link_count,
                 "recommendation_count": len(recommendations),
+                "actionable_auction_count": len(recommendations),
+                "actionable_auctions": [
+                    actionable_auction_payload(
+                        result=result,
+                        active_listing_count=active_listing_count(result),
+                        sold_listing_count=sold_listing_count(result),
+                        sell_through_rate=sell_through_rate(result),
+                        recent_sold_prices=recent_sold_prices(result),
+                        market_evidence=market_evidence(result),
+                    )
+                    for result in recommendations
+                ],
                 "recommendations": [
-                    {
-                        "title": result.bid_execution.title,
-                        "item_id": result.bid_execution.item_id,
-                        "current_price": result.bid_execution.current_price,
-                        "end_time": (
-                            result.bid_execution.end_time.isoformat()
-                            if result.bid_execution.end_time
-                            else None
-                        ),
-                        "estimated_market_value": result.bid_execution.estimated_market_value,
-                        "recommended_max_bid": result.bid_execution.recommended_bid,
-                        "expected_margin": result.bid_execution.expected_margin,
-                        "active_listing_count": active_listing_count(result),
-                        "sold_listing_count": sold_listing_count(result),
-                        "sell_through_rate": sell_through_rate(result),
-                        "recent_sold_prices": recent_sold_prices(result),
-                        "status": result.bid_execution.status,
-                        "url": result.bid_execution.listing_url,
-                        "reasoning": result.bid_execution.reasoning,
-                        "market_evidence": market_evidence(result),
-                    }
+                    actionable_auction_payload(
+                        result=result,
+                        active_listing_count=active_listing_count(result),
+                        sold_listing_count=sold_listing_count(result),
+                        sell_through_rate=sell_through_rate(result),
+                        recent_sold_prices=recent_sold_prices(result),
+                        market_evidence=market_evidence(result),
+                    )
                     for result in recommendations
                 ],
                 "reviewed_auctions": [
                     {
                         "title": result.listing.title if result.listing else result.raw_listing.title,
                         "item_id": result.listing.listing_id if result.listing else result.raw_listing.listing_id,
+                        "pipeline_status": pipeline_status(result),
+                        "pipeline_stage": pipeline_stage(result),
                         "pokemon": (
                             result.listing.detected_pokemon.display_name
                             if result.listing and result.listing.detected_pokemon
                             else None
                         ),
                         "grade": result.listing.grade_value if result.listing else None,
+                        "language": (
+                            result.listing.card_language.display_name
+                            if result.listing and result.listing.card_language
+                            else None
+                        ),
                         "current_price": result.listing.current_price if result.listing else result.raw_listing.current_price,
                         "end_time": (
                             result.listing.end_time.isoformat()
@@ -155,7 +183,7 @@ def print_recommendations(summary: WorkflowSummary) -> None:
                         "sold_listing_count": sold_listing_count(result),
                         "sell_through_rate": sell_through_rate(result),
                         "recent_sold_prices": recent_sold_prices(result),
-                        "decision": result.bid_decision.reason if result.bid_decision else None,
+                        "decision": decision_text(result),
                         "market_evidence": market_evidence(result),
                         "url": result.listing.url if result.listing else result.raw_listing.url,
                     }
@@ -166,6 +194,63 @@ def print_recommendations(summary: WorkflowSummary) -> None:
             sort_keys=True,
         )
     )
+
+
+def actionable_auctions(summary: WorkflowSummary) -> list[ListingWorkflowResult]:
+    return [
+        result
+        for result in summary.results
+        if result.bid_decision
+        and result.bid_decision.approved
+        and result.bid_decision.approved_max_bid is not None
+        and result.bid_execution
+        and result.bid_execution.listing_url
+        and result.bid_execution.end_time
+        and result.listing
+        and result.listing.minutes_remaining() > 0
+        and result.bid_execution.status in {
+            "requires_user_action",
+            "fallback_manual_required",
+            "dry_run_official_api",
+            "submitted",
+        }
+    ]
+
+
+def actionable_auction_payload(
+    result: ListingWorkflowResult,
+    active_listing_count: int | None,
+    sold_listing_count: int | None,
+    sell_through_rate: float | None,
+    recent_sold_prices: list[float],
+    market_evidence: str | None,
+) -> dict:
+    assert result.bid_execution is not None
+    action = result.bid_execution
+    return {
+        "title": action.title,
+        "item_id": action.item_id,
+        "current_price": action.current_price,
+        "end_time": action.end_time.isoformat() if action.end_time else None,
+        "estimated_market_value": action.estimated_market_value,
+        "recommended_max_bid": action.recommended_bid,
+        "expected_margin": action.expected_margin,
+        "language": (
+            result.listing.card_language.display_name
+            if result.listing and result.listing.card_language
+            else None
+        ),
+        "active_listing_count": active_listing_count,
+        "sold_listing_count": sold_listing_count,
+        "sell_through_rate": sell_through_rate,
+        "recent_sold_prices": recent_sold_prices,
+        "action_required": action.status,
+        "status": action.status,
+        "url": action.listing_url,
+        "reasoning": action.reasoning,
+        "market_evidence": market_evidence,
+        "message": action.message,
+    }
 
 
 def main() -> None:

@@ -1,8 +1,23 @@
 from app.models.analysis import AnalysisResult, MarketAnalysisBatchResult, MarketAnalysisInput
 from app.models.bidding import BidActionResult, BidDecision, BidExecutionResult, BiddingMode
-from app.models.config import BidGuardrails, BiddingConfig, MarketResearchConfig, SearchConfig, TargetRules
+from app.models.card_language import CardLanguage
+from app.models.config import (
+    BidGuardrails,
+    BiddingConfig,
+    MarketResearchConfig,
+    MarketResearchMode,
+    SearchConfig,
+    TargetRules,
+)
 from app.models.listing import Listing, RawListing
-from app.models.market import MarketComp, MarketResearchResult
+from app.models.market import (
+    LLMMarketResearchOutput,
+    MarketComp,
+    MarketResearchQuery,
+    MarketResearchQueryPlan,
+    MarketResearchQueryPlanBatch,
+    MarketResearchResult,
+)
 from app.models.pokemon import Pokemon
 from app.models.review import AuctionSearchDecision, AuctionSearchResult
 from app.models.state import ListingWorkflowResult, WorkflowSummary
@@ -18,12 +33,18 @@ __all__ = [
     "BidGuardrails",
     "BiddingConfig",
     "BiddingMode",
+    "CardLanguage",
     "Listing",
     "ListingWorkflowResult",
+    "LLMMarketResearchOutput",
     "MarketAnalysisBatchResult",
     "MarketAnalysisInput",
     "MarketComp",
+    "MarketResearchQuery",
     "MarketResearchConfig",
+    "MarketResearchMode",
+    "MarketResearchQueryPlan",
+    "MarketResearchQueryPlanBatch",
     "MarketResearchResult",
     "Pokemon",
     "RawListing",

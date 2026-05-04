@@ -3,8 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.clients.ebay_market import MockEbayMarketResearchClient
+from app.agents.market_query_agent import MarketQueryPlannerAgent, MarketQueryPlannerEngine
 from app.models.config import SearchConfig, TargetRules
 from app.models.listing import Listing
+from app.models.market import (
+    MarketResearchQuery,
+    MarketResearchQueryPlan,
+    MarketResearchQueryPlanBatch,
+    MarketResearchResult,
+)
 from app.models.pokemon import Pokemon
 from app.storage.sqlite import SQLiteStorage
 from app.tools.market_research_tool import MarketResearchTool
@@ -61,7 +68,68 @@ def test_market_research_tool_attaches_evidence_to_listing_context(tmp_path) -> 
     assert len(enriched_listings) == 1
     enriched_context = enriched_listings[0].market_context
     assert "ebay_market_research" in enriched_context
-    assert enriched_context["estimated_market_value_from_ebay_sold_comps"] == 205.0
+    assert enriched_context["estimated_market_value_from_ebay_sold_comps"] == 197.5
     assert enriched_context["sell_through_rate"] == 1.5
     assert results["1001"].active_listing_count == 18
     assert results["1001"].sold_listing_count == 27
+    assert results["1001"].estimated_market_value == 197.5
+
+
+class FakeMarketQueryPlannerEngine(MarketQueryPlannerEngine):
+    def plan(self, listings: list[Listing]) -> MarketResearchQueryPlanBatch:
+        return MarketResearchQueryPlanBatch(
+            plans=[
+                MarketResearchQueryPlan(
+                    listing_id=listings[0].listing_id,
+                    queries=[
+                        MarketResearchQuery(
+                            query=listings[0].title,
+                            purpose="exact_title",
+                            rationale="Exact title first.",
+                        ),
+                        MarketResearchQuery(
+                            query="2025 Pokemon Mega Charizard X EX 109 PSA 10",
+                            purpose="identity_variant",
+                            rationale="Normalized identity fallback.",
+                        ),
+                    ],
+                )
+            ]
+        )
+
+
+class CapturingMarketResearchClient(MockEbayMarketResearchClient):
+    def __init__(self) -> None:
+        self.query_strings: list[str] | None = None
+
+    def research_listing(self, listing, config, query_strings=None) -> MarketResearchResult:
+        self.query_strings = query_strings
+        return super().research_listing(listing, config, query_strings=query_strings)
+
+
+def test_market_research_tool_passes_query_planner_variants_to_client(tmp_path) -> None:
+    storage = SQLiteStorage(tmp_path / "market-query-plan.db")
+    client = CapturingMarketResearchClient()
+    try:
+        tool = MarketResearchTool(
+            client=client,
+            storage=storage,
+            query_planner_agent=MarketQueryPlannerAgent(FakeMarketQueryPlannerEngine()),
+        )
+        config = SearchConfig(
+            target_pokemon=[Pokemon.CHARIZARD],
+            target_rules=TargetRules(allowed_grades={"10"}),
+        )
+
+        tool.run(
+            run_id="test-run",
+            listings=[_listing()],
+            search_config=config,
+        )
+    finally:
+        storage.close()
+
+    assert client.query_strings == [
+        "2025 Pokemon PFL EN-Phantasmal Flames Ultra Rare #109 Mega Charizard X EX PSA 10",
+        "2025 Pokemon Mega Charizard X EX 109 PSA 10",
+    ]

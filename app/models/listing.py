@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.models.card_language import CardLanguage
 from app.models.pokemon import Pokemon
 
 
@@ -57,6 +58,7 @@ class Listing(BaseModel):
     grading_company: str | None = None
     grade_value: str | None = None
     detected_pokemon: Pokemon | None = None
+    card_language: CardLanguage | None = None
     set_name: str | None = None
     card_number: str | None = None
     in_psa_vault: bool = False

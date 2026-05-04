@@ -9,6 +9,7 @@ from app.models.analysis import MarketAnalysisBatchResult, MarketAnalysisInput
 from app.models.config import TargetRules
 from app.models.listing import Listing
 from app.prompts.analysis_prompt import ANALYSIS_HUMAN_PROMPT, ANALYSIS_SYSTEM_PROMPT
+from app.services.market_sanity import sanitize_analysis_result
 from app.storage.sqlite import SQLiteStorage
 
 
@@ -74,9 +75,12 @@ class AnalysisAgent(BaseAgent):
             target_rules=target_rules,
         )
         result = self.engine.analyze(analysis_input)
+        result = MarketAnalysisBatchResult(
+            analyses=[sanitize_analysis_result(analysis) for analysis in result.analyses]
+        )
         for analysis in result.analyses:
             self.storage.record_analysis(run_id, analysis.listing_id, analysis)
-        self.logger.info(
+        self.logger.debug(
             "Market analysis completed for %s listings",
             len(result.analyses),
         )

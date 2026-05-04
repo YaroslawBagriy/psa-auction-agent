@@ -18,8 +18,8 @@ class AnalysisResult(BaseModel):
     url: str
     should_bid: bool
     confidence: float
-    estimated_market_value: float
-    recommended_max_bid: float
+    estimated_market_value: float | None = None
+    recommended_max_bid: float | None = None
     trend_outlook: Literal["upward", "steady", "downward", "uncertain"]
     reasoning: str
     risk_flags: list[str] = Field(default_factory=list)

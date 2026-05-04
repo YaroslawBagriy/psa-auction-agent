@@ -22,6 +22,7 @@ class EbayMarketResearchClient(ABC):
         self,
         listing: Listing,
         config: MarketResearchConfig,
+        query_strings: list[str] | None = None,
     ) -> MarketResearchResult:
         raise NotImplementedError
 
@@ -31,6 +32,7 @@ class MockEbayMarketResearchClient(EbayMarketResearchClient):
         self,
         listing: Listing,
         config: MarketResearchConfig,
+        query_strings: list[str] | None = None,
     ) -> MarketResearchResult:
         market_context = listing.market_context
         recent_sales = [
@@ -67,7 +69,7 @@ class MockEbayMarketResearchClient(EbayMarketResearchClient):
         )
         return MarketResearchResult(
             listing_id=listing.listing_id,
-            query=listing.title,
+            query=(query_strings or [listing.title])[0],
             active_listing_count=active_listing_count,
             sold_listing_count=sold_listing_count,
             sell_through_rate=sell_through_rate,
@@ -116,10 +118,12 @@ class OfficialEbayMarketResearchClient(EbayMarketResearchClient):
         self,
         listing: Listing,
         config: MarketResearchConfig,
+        query_strings: list[str] | None = None,
     ) -> MarketResearchResult:
-        query = self._build_comp_query(listing)
+        queries = self._build_comp_queries(listing, query_strings)
+        query = queries[0]
         warnings: list[str] = []
-        raw_payload: dict[str, Any] = {}
+        raw_payload: dict[str, Any] = {"queries": queries}
 
         active_count: int | None = None
         sold_count: int | None = None
@@ -142,24 +146,32 @@ class OfficialEbayMarketResearchClient(EbayMarketResearchClient):
             warnings.append(warning)
 
         if config.marketplace_insights_enabled:
-            try:
-                sold_payload = self._search_sold_comps(
-                    query=query,
-                    limit=config.sold_limit,
-                    scope=config.marketplace_insights_scope,
-                )
-                raw_payload["sold"] = sold_payload
-                sold_count = self._optional_int(sold_payload.get("total"))
-                sold_items = sold_payload.get("itemSales") or sold_payload.get("itemSummaries") or []
-                sold_comps = [
-                    self._market_comp_from_item(item, source="sold")
-                    for item in sold_items
-                    if isinstance(item, dict)
-                ]
-            except Exception as exc:
-                warning = f"sold_comp_search_unavailable: {exc}"
-                self.logger.warning(warning)
-                warnings.append(warning)
+            sold_payloads: list[dict[str, Any]] = []
+            for sold_query in queries:
+                try:
+                    sold_payload = self._search_sold_comps(
+                        query=sold_query,
+                        limit=config.sold_limit,
+                        scope=config.marketplace_insights_scope,
+                    )
+                    sold_payloads.append({"query": sold_query, "payload": sold_payload})
+                    sold_items = sold_payload.get("itemSales") or sold_payload.get("itemSummaries") or []
+                    if sold_items:
+                        raw_payload["sold"] = sold_payloads
+                        raw_payload["selected_sold_query"] = sold_query
+                        sold_count = self._optional_int(sold_payload.get("total"))
+                        sold_comps = [
+                            self._market_comp_from_item(item, source="sold")
+                            for item in sold_items
+                            if isinstance(item, dict)
+                        ]
+                        break
+                except Exception as exc:
+                    warning = f"sold_comp_search_unavailable query='{sold_query}': {exc}"
+                    self.logger.warning(warning)
+                    warnings.append(warning)
+            if "sold" not in raw_payload and sold_payloads:
+                raw_payload["sold"] = sold_payloads
         else:
             warnings.append("marketplace_insights_disabled")
 
@@ -284,8 +296,16 @@ class OfficialEbayMarketResearchClient(EbayMarketResearchClient):
             "Accept": "application/json",
         }
 
-    def _build_comp_query(self, listing: Listing) -> str:
-        return " ".join(listing.title.split())
+    def _build_comp_queries(self, listing: Listing, query_strings: list[str] | None) -> list[str]:
+        candidates = query_strings or [listing.title]
+        queries: list[str] = []
+        for candidate in candidates:
+            query = " ".join(candidate.split())
+            if query and query not in queries:
+                queries.append(query)
+        if not queries:
+            queries.append(" ".join(listing.title.split()))
+        return queries
 
     def _market_comp_from_item(self, item: dict[str, Any], source: str) -> MarketComp:
         price_payload = (

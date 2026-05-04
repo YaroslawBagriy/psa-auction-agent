@@ -414,6 +414,99 @@ def test_low_margin_opportunities_are_skipped(tmp_path: Path) -> None:
     assert action is None
 
 
+def test_missing_actionable_max_bid_is_skipped_without_zero_sentinel(tmp_path: Path) -> None:
+    decision, action = _run_tool(
+        tmp_path,
+        analysis=_analysis(
+            should_bid=False,
+            confidence=0.5,
+            trend_outlook="uncertain",
+            recommended_max_bid=None,
+            risk_flags=["insufficient_exact_ebay_comps"],
+        ),
+    )
+
+    assert decision.approved is False
+    assert decision.approved_max_bid is None
+    assert "actionable max bid" in decision.reason.lower()
+    assert action is None
+
+
+def test_missing_sold_comp_market_value_is_skipped(tmp_path: Path) -> None:
+    decision, action = _run_tool(
+        tmp_path,
+        analysis=_analysis(
+            should_bid=False,
+            estimated_market_value=None,
+            recommended_max_bid=None,
+            risk_flags=["insufficient_exact_ebay_comps"],
+        ),
+    )
+
+    assert decision.approved is False
+    assert "sold-comp market value" in decision.reason.lower()
+    assert action is None
+
+
+def test_outlier_contaminated_sold_comps_block_bid_recommendation(tmp_path: Path) -> None:
+    decision, action = _run_tool(
+        tmp_path,
+        listing=_listing(current_price=20.5, grade_value="9"),
+        analysis=_analysis(
+            estimated_market_value=850.0,
+            recommended_max_bid=765.0,
+            recent_sold_prices=[1000.19, 850.0, 520.0, 29.99, 26.99],
+        ),
+    )
+
+    assert decision.approved is False
+    assert "sold comps are too inconsistent" in decision.reason.lower()
+    assert action is None
+
+
+def test_lower_sold_comp_cap_blocks_small_margin_rayquaza_bid(tmp_path: Path) -> None:
+    decision, action = _run_tool(
+        tmp_path,
+        listing=_listing(
+            listing_id="306893319759",
+            current_price=207.5,
+            title="2021 POKEMON CELEBRATIONS CLASSIC COLLECTION #76 M RAYQUAZA EX PSA 10",
+        ),
+        analysis=_analysis(
+            listing_id="306893319759",
+            estimated_market_value=270.0,
+            recommended_max_bid=230.0,
+            recent_sold_prices=[270.0, 170.0, 500.91, 180.5, 45.0, 70.0, 225.0],
+        ),
+    )
+
+    assert decision.approved is False
+    assert "approved max bid does not exceed" in decision.reason.lower()
+    assert action is None
+
+
+def test_lower_sold_comp_cap_reduces_actionable_max_bid(tmp_path: Path) -> None:
+    decision, action = _run_tool(
+        tmp_path,
+        listing=_listing(
+            listing_id="117162542756",
+            current_price=96.01,
+            title="2005 POKEMON EX DEOXYS #22 RAYQUAZA PSA 9",
+        ),
+        analysis=_analysis(
+            listing_id="117162542756",
+            estimated_market_value=375.0,
+            recommended_max_bid=330.0,
+            recent_sold_prices=[925.0, 375.0, 206.55, 330.69, 199.99],
+        ),
+    )
+
+    assert decision.approved is True
+    assert decision.approved_max_bid == 144.59
+    assert action is not None
+    assert action.recommended_bid == 144.59
+
+
 def test_seller_mismatch_blocks_recommendation(tmp_path: Path) -> None:
     decision, action = _run_tool(tmp_path, listing=_listing(seller_name="not-psa"))
 

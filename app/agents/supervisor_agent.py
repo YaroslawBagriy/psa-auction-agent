@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -7,7 +8,7 @@ from app.agents.analysis_agent import AnalysisAgent
 from app.agents.auction_search_agent import AuctionSearchAgent
 from app.agents.base import BaseAgent
 from app.models.config import SearchConfig
-from app.models.listing import Listing
+from app.models.listing import RawListing
 from app.models.state import ListingWorkflowResult, WorkflowSummary
 from app.storage.sqlite import SQLiteStorage
 from app.tools.bid_execution_tool import BidExecutionTool
@@ -42,13 +43,7 @@ class SupervisorAgent(BaseAgent):
     def _build_chain(self):
         from langchain_core.runnables import RunnableLambda
 
-        return (
-            RunnableLambda(self._scan_and_validate_stage).with_config(run_name="scanner_and_preparation_tools")
-            | RunnableLambda(self._auction_search_stage)
-            | RunnableLambda(self._market_research_stage).with_config(run_name="market_research_tool")
-            | RunnableLambda(self._market_analysis_stage)
-            | RunnableLambda(self._bidding_stage).with_config(run_name="bid_execution_tool")
-        )
+        return RunnableLambda(self._process_listings_stage).with_config(run_name="per_listing_agent_workflow")
 
     def run(self, search_config: SearchConfig) -> WorkflowSummary:
         run_id = search_config.run_label or f"run-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
@@ -60,143 +55,318 @@ class SupervisorAgent(BaseAgent):
         )
         return self._build_summary(run_id=run_id, results=final_state["results"])
 
-    def _scan_and_validate_stage(self, state: dict[str, Any]) -> dict[str, Any]:
+    def _process_listings_stage(self, state: dict[str, Any]) -> dict[str, Any]:
         run_id: str = state["run_id"]
         search_config: SearchConfig = state["search_config"]
 
-        raw_listings = self.scanner_tool.run(run_id=run_id, search_config=search_config)
-        results, results_by_listing_id, validated_listings = self.listing_preparation_tool.run(
-            run_id=run_id,
-            raw_listings=raw_listings,
-            search_config=search_config,
-        )
-        self.logger.info(
-            "Scan/preparation stage complete raw=%s validated=%s",
-            len(raw_listings),
-            len(validated_listings),
-        )
+        results: list[ListingWorkflowResult] = []
+        results_by_listing_id: dict[str, ListingWorkflowResult] = {}
+        self.logger.info("Reviewing up to %s auctions one at a time.", search_config.scan_limit)
+        for index, raw_listing in enumerate(
+            self.scanner_tool.iter_listings(run_id=run_id, search_config=search_config),
+            start=1,
+        ):
+            workflow_result = self._process_single_listing(
+                run_id=run_id,
+                raw_listing=raw_listing,
+                search_config=search_config,
+                index=index,
+                total=search_config.scan_limit,
+            )
+            results.append(workflow_result)
+            results_by_listing_id[raw_listing.listing_id] = workflow_result
 
         state.update(
             {
-                "raw_listings": raw_listings,
                 "results": results,
                 "results_by_listing_id": results_by_listing_id,
-                "validated_listings": validated_listings,
             }
         )
+        self.logger.info("Auction review finished. Reviewed %s auctions.", len(results))
         return state
 
-    def _auction_search_stage(self, state: dict[str, Any]) -> dict[str, Any]:
-        run_id: str = state["run_id"]
-        search_config: SearchConfig = state["search_config"]
-        validated_listings: list[Listing] = state.get("validated_listings", [])
-        results_by_listing_id: dict[str, ListingWorkflowResult] = state["results_by_listing_id"]
+    def _process_single_listing(
+        self,
+        run_id: str,
+        raw_listing: RawListing,
+        search_config: SearchConfig,
+        index: int,
+        total: int,
+    ) -> ListingWorkflowResult:
+        self._log_auction_start(index=index, total=total, raw_listing=raw_listing)
+        workflow_result = ListingWorkflowResult(raw_listing=raw_listing)
+        try:
+            self._log_step(1, "Checking listing requirements")
+            preparation_results, _, validated_listings = self.listing_preparation_tool.run(
+                run_id=run_id,
+                raw_listings=[raw_listing],
+                search_config=search_config,
+            )
+            workflow_result = preparation_results[0] if preparation_results else workflow_result
 
-        search_result = self.auction_search_agent.run(
-            run_id=run_id,
-            listings=validated_listings,
-            search_config=search_config,
-        )
-        decision_by_listing_id = {
-            decision.listing_id: decision
-            for decision in search_result.decisions
-        }
-        selected_listing_ids = set(search_result.selected_listing_ids())
-        selected_listings: list[Listing] = []
-        for listing in validated_listings:
-            workflow_result = results_by_listing_id[listing.listing_id]
-            decision = decision_by_listing_id.get(listing.listing_id)
-            workflow_result.search_decision = decision
-            if listing.listing_id in selected_listing_ids:
-                selected_listings.append(listing)
+            if workflow_result.pre_validation and not workflow_result.pre_validation.passed:
+                self._finish_listing(
+                    index=index,
+                    total=total,
+                    workflow_result=workflow_result,
+                    verdict="DENIED",
+                    stage="pre_validation",
+                    reason=self._join_reasons(workflow_result.pre_validation.reasons),
+                )
+                return workflow_result
 
-        state.update(
-            {
-                "selected_listings": selected_listings,
-                "search_result": search_result,
-            }
-        )
-        self.logger.info("Auction-search stage complete selected=%s", len(selected_listings))
-        return state
+            if workflow_result.validation and not workflow_result.validation.passed:
+                self._finish_listing(
+                    index=index,
+                    total=total,
+                    workflow_result=workflow_result,
+                    verdict="DENIED",
+                    stage="listing_validation",
+                    reason=self._join_reasons(workflow_result.validation.reasons),
+                )
+                return workflow_result
 
-    def _market_research_stage(self, state: dict[str, Any]) -> dict[str, Any]:
-        run_id: str = state["run_id"]
-        search_config: SearchConfig = state["search_config"]
-        selected_listings: list[Listing] = state.get("selected_listings", [])
-        results_by_listing_id: dict[str, ListingWorkflowResult] = state["results_by_listing_id"]
+            listing = workflow_result.listing or (validated_listings[0] if validated_listings else None)
+            if listing is None:
+                self._finish_listing(
+                    index=index,
+                    total=total,
+                    workflow_result=workflow_result,
+                    verdict="DENIED",
+                    stage="listing_preparation",
+                    reason="Listing preparation did not produce a normalized listing.",
+                )
+                return workflow_result
 
-        enriched_listings, market_research_by_listing_id = self.market_research_tool.run(
-            run_id=run_id,
-            listings=selected_listings,
-            search_config=search_config,
-        )
-        for listing in enriched_listings:
-            workflow_result = results_by_listing_id[listing.listing_id]
-            workflow_result.listing = listing
+            self._log_preparation_passed(workflow_result)
+            self._log_step(2, "Asking the listing-review agent if this auction is worth researching")
+            search_result = self.auction_search_agent.run(
+                run_id=run_id,
+                listings=[listing],
+                search_config=search_config,
+            )
+            search_decision = next(
+                (
+                    decision
+                    for decision in search_result.decisions
+                    if decision.listing_id == listing.listing_id
+                ),
+                None,
+            )
+            workflow_result.search_decision = search_decision
+            if search_decision is None:
+                reason = "AuctionSearchAgent did not return a decision for this listing."
+                self.storage.record_error(run_id, listing.listing_id, "auction_search", reason)
+                self._finish_listing(
+                    index=index,
+                    total=total,
+                    workflow_result=workflow_result,
+                    verdict="DENIED",
+                    stage="auction_search",
+                    reason=reason,
+                )
+                return workflow_result
+
+            if not search_decision.should_track:
+                self._finish_listing(
+                    index=index,
+                    total=total,
+                    workflow_result=workflow_result,
+                    verdict="DENIED",
+                    stage="auction_search",
+                    reason=search_decision.rationale,
+                )
+                return workflow_result
+
+            self.logger.info("Step 2 result: selected for market research.")
+            self._log_step(3, "Researching market value, sold comps, and sell-through")
+            enriched_listings, market_research_by_listing_id = self.market_research_tool.run(
+                run_id=run_id,
+                listings=[listing],
+                search_config=search_config,
+            )
+            if enriched_listings:
+                listing = enriched_listings[0]
+                workflow_result.listing = listing
             workflow_result.market_research = market_research_by_listing_id.get(listing.listing_id)
+            if workflow_result.market_research is None:
+                self.logger.info("Step 3 result: no reliable market evidence found yet.")
+            else:
+                self._log_market_research(workflow_result)
 
-        state.update(
-            {
-                "selected_listings": enriched_listings,
-                "market_research_by_listing_id": market_research_by_listing_id,
-            }
-        )
-        self.logger.info("Market-research stage complete researched=%s", len(market_research_by_listing_id))
-        return state
-
-    def _market_analysis_stage(self, state: dict[str, Any]) -> dict[str, Any]:
-        run_id: str = state["run_id"]
-        search_config: SearchConfig = state["search_config"]
-        selected_listings: list[Listing] = state.get("selected_listings", [])
-        results_by_listing_id: dict[str, ListingWorkflowResult] = state["results_by_listing_id"]
-
-        analysis_batch = self.analysis_agent.run(
-            run_id=run_id,
-            listings=selected_listings,
-            target_rules=search_config.target_rules,
-        )
-        analyses_by_listing_id = analysis_batch.by_listing_id()
-        for listing_id, analysis in analyses_by_listing_id.items():
-            results_by_listing_id[listing_id].analysis = analysis
-
-        state["analysis_batch"] = analysis_batch
-        self.logger.info("Market-analysis stage complete analyses=%s", len(analysis_batch.analyses))
-        return state
-
-    def _bidding_stage(self, state: dict[str, Any]) -> dict[str, Any]:
-        run_id: str = state["run_id"]
-        search_config: SearchConfig = state["search_config"]
-        selected_listings: list[Listing] = state.get("selected_listings", [])
-        results_by_listing_id: dict[str, ListingWorkflowResult] = state["results_by_listing_id"]
-        analyses_by_listing_id = state.get("analysis_batch").by_listing_id() if state.get("analysis_batch") else {}
-
-        for listing in selected_listings:
-            analysis = analyses_by_listing_id.get(listing.listing_id)
+            self._log_step(4, "Asking the analysis agent for fair value and max bid")
+            analysis_batch = self.analysis_agent.run(
+                run_id=run_id,
+                listings=[listing],
+                target_rules=search_config.target_rules,
+            )
+            analysis = analysis_batch.by_listing_id().get(listing.listing_id)
             if analysis is None:
-                continue
-            workflow_result = results_by_listing_id[listing.listing_id]
-            try:
-                bid_decision, bid_execution = self.bid_execution_tool.run(
-                    run_id=run_id,
-                    listing=listing,
-                    analysis=analysis,
-                    search_config=search_config,
+                reason = "AnalysisAgent did not return an analysis for this listing."
+                self.storage.record_error(run_id, listing.listing_id, "analysis", reason)
+                self._finish_listing(
+                    index=index,
+                    total=total,
+                    workflow_result=workflow_result,
+                    verdict="DENIED",
+                    stage="analysis",
+                    reason=reason,
                 )
-                workflow_result.bid_decision = bid_decision
-                workflow_result.bid_execution = bid_execution
-                self.logger.info(
-                    "Bid guardrails listing_id=%s approved=%s reason=%s",
-                    listing.listing_id,
-                    bid_decision.approved,
-                    bid_decision.reason,
-                )
-            except Exception as exc:  # pragma: no cover - defensive fallback
-                self.logger.exception("Bidding failed for listing %s", listing.listing_id)
-                self.storage.record_error(run_id, listing.listing_id, "bidding", str(exc))
-                workflow_result.errors.append(str(exc))
+                return workflow_result
 
-        self.logger.info("Bidding stage complete selected=%s", len(selected_listings))
-        return state
+            workflow_result.analysis = analysis
+            self._log_analysis(workflow_result)
+            self._log_step(5, "Applying bid safety rules")
+            bid_decision, bid_execution = self.bid_execution_tool.run(
+                run_id=run_id,
+                listing=listing,
+                analysis=analysis,
+                search_config=search_config,
+            )
+            workflow_result.bid_decision = bid_decision
+            workflow_result.bid_execution = bid_execution
+            self._finish_listing(
+                index=index,
+                total=total,
+                workflow_result=workflow_result,
+                verdict="ACCEPTED" if bid_decision.approved else "DENIED",
+                stage="bid_guardrails",
+                reason=bid_decision.reason,
+            )
+            return workflow_result
+        except Exception as exc:  # pragma: no cover - defensive workflow boundary
+            if self.logger.isEnabledFor(logging.DEBUG):
+                self.logger.exception("Per-listing workflow failed for %s", raw_listing.listing_id)
+            else:
+                self.logger.warning(
+                    "This auction could not be fully reviewed because one step failed. It will be denied safely."
+                )
+            self.storage.record_error(run_id, raw_listing.listing_id, "per_listing_workflow", str(exc))
+            workflow_result.errors.append(str(exc))
+            self._finish_listing(
+                index=index,
+                total=total,
+                workflow_result=workflow_result,
+                verdict="DENIED",
+                stage="error",
+                reason=str(exc),
+            )
+            return workflow_result
+
+    def _join_reasons(self, reasons: list[str]) -> str:
+        return "; ".join(reason for reason in reasons if reason) or "No reason provided."
+
+    def _log_auction_start(self, index: int, total: int, raw_listing: RawListing) -> None:
+        self.logger.info(
+            "------ Start auction %s/%s ------",
+            index,
+            total,
+        )
+        self.logger.info("Item ID: %s | Current price: $%.2f", raw_listing.listing_id, raw_listing.current_price)
+        self.logger.info("Auction title: %s", raw_listing.title[:180])
+
+    def _log_step(self, step_number: int, message: str) -> None:
+        self.logger.info("Step %s: %s...", step_number, message)
+
+    def _log_preparation_passed(self, workflow_result: ListingWorkflowResult) -> None:
+        listing = workflow_result.listing
+        if listing is None:
+            self.logger.info("Step 1 result: passed basic requirements.")
+            return
+
+        pokemon = listing.detected_pokemon.display_name if listing.detected_pokemon else "unknown Pokemon"
+        grade = f"PSA {listing.grade_value}" if listing.grade_value else "unknown grade"
+        language = listing.card_language.display_name if listing.card_language else "unknown language"
+        self.logger.info(
+            "Step 1 result: passed. Card appears to be %s, %s, %s, current price $%.2f.",
+            pokemon,
+            grade,
+            language,
+            listing.current_price,
+        )
+
+    def _log_market_research(self, workflow_result: ListingWorkflowResult) -> None:
+        research = workflow_result.market_research
+        if research is None:
+            return
+
+        value = self._money(research.estimated_market_value)
+        sell_through = (
+            f"{research.sell_through_rate:.2f}"
+            if research.sell_through_rate is not None
+            else "unknown"
+        )
+        self.logger.info(
+            "Step 3 result: market value=%s, sold comps=%s, active listings=%s, sell-through=%s.",
+            value,
+            research.sold_listing_count if research.sold_listing_count is not None else "unknown",
+            research.active_listing_count if research.active_listing_count is not None else "unknown",
+            sell_through,
+        )
+        if research.evidence_summary:
+            self.logger.info("Market evidence: %s", research.evidence_summary)
+
+    def _log_analysis(self, workflow_result: ListingWorkflowResult) -> None:
+        analysis = workflow_result.analysis
+        if analysis is None:
+            return
+
+        self.logger.info(
+            "Step 4 result: %s. Estimated value=%s, recommended max bid=%s, confidence=%.2f.",
+            "bid candidate" if analysis.should_bid else "do not bid",
+            self._money(analysis.estimated_market_value),
+            self._money(analysis.recommended_max_bid),
+            analysis.confidence,
+        )
+        if analysis.reasoning:
+            self.logger.info("Analysis: %s", analysis.reasoning)
+        if analysis.risk_flags:
+            self.logger.info("Risks: %s", "; ".join(analysis.risk_flags))
+
+    def _finish_listing(
+        self,
+        index: int,
+        total: int,
+        workflow_result: ListingWorkflowResult,
+        verdict: str,
+        stage: str,
+        reason: str,
+    ) -> None:
+        self._log_verdict(
+            workflow_result=workflow_result,
+            verdict=verdict,
+            stage=stage,
+            reason=reason,
+        )
+        self.logger.info(
+            "------ End auction %s/%s: %s ------",
+            index,
+            total,
+            "accepted" if verdict == "ACCEPTED" else "denied",
+        )
+
+    def _log_verdict(
+        self,
+        workflow_result: ListingWorkflowResult,
+        verdict: str,
+        stage: str,
+        reason: str,
+    ) -> None:
+        if verdict == "ACCEPTED":
+            decision = workflow_result.bid_decision
+            self.logger.info(
+                "Final decision: ACCEPTED. Recommended max bid: %s. Reason: %s",
+                self._money(decision.approved_max_bid if decision else None),
+                reason,
+            )
+            return
+
+        self.logger.info("Final decision: DENIED. Reason: %s", reason)
+
+    def _money(self, value: float | None) -> str:
+        if value is None:
+            return "unknown"
+        return f"${value:.2f}"
 
     def _build_summary(self, run_id: str, results: list[ListingWorkflowResult]) -> WorkflowSummary:
         candidate_count = sum(

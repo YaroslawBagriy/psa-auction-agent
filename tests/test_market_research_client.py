@@ -76,6 +76,34 @@ class FakeSession:
         return FakeResponse()
 
 
+class ZeroThenSoldSession(FakeSession):
+    def __init__(self) -> None:
+        super().__init__()
+        self.sold_calls = 0
+
+    def get(self, url, **kwargs):
+        if "marketplace_insights" not in url:
+            return super().get(url, **kwargs)
+        self.gets.append((url, kwargs))
+        self.sold_calls += 1
+        if self.sold_calls == 1:
+            return FakeResponse({"total": 0, "itemSales": []})
+        return FakeResponse(
+            {
+                "total": 2,
+                "itemSales": [
+                    {
+                        "itemId": "v1|sold-fallback|0",
+                        "legacyItemId": "sold-fallback",
+                        "title": "2021 POKEMON CELEBRATIONS GARCHOMP C LV.X #145 PSA 10",
+                        "price": {"value": "70.00", "currency": "USD"},
+                        "itemWebUrl": "https://www.ebay.com/itm/sold-fallback",
+                    }
+                ],
+            }
+        )
+
+
 def _listing() -> Listing:
     return Listing(
         listing_id="117155708072",
@@ -154,3 +182,30 @@ def test_official_market_research_skips_sold_comps_when_insights_disabled() -> N
     assert result.estimated_market_value is None
     assert result.warnings == ["marketplace_insights_disabled"]
     assert all("marketplace_insights" not in call[0] for call in session.gets)
+
+
+def test_official_market_research_tries_query_variants_for_sold_comps() -> None:
+    session = ZeroThenSoldSession()
+    client = OfficialEbayMarketResearchClient(
+        client_id="client-id",
+        client_secret="client-secret",
+        session=session,
+    )
+
+    result = client.research_listing(
+        _listing(),
+        MarketResearchConfig(marketplace_insights_enabled=True),
+        query_strings=[
+            _listing().title,
+            "2021 Pokemon Celebrations Garchomp C LV.X #145 PSA 10",
+        ],
+    )
+
+    assert result.sold_listing_count == 2
+    assert result.recent_sold_prices == [70.0]
+    assert result.estimated_market_value == 70.0
+    sold_gets = [call for call in session.gets if "marketplace_insights" in call[0]]
+    assert [call[1]["params"]["q"] for call in sold_gets] == [
+        _listing().title,
+        "2021 Pokemon Celebrations Garchomp C LV.X #145 PSA 10",
+    ]

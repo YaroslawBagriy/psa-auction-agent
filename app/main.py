@@ -18,11 +18,21 @@ from app.agents.auction_search_agent import (
     AuctionSearchEngine,
     OpenAIAuctionSearchEngine,
 )
+from app.agents.market_query_agent import (
+    MarketQueryPlannerAgent,
+    MarketQueryPlannerEngine,
+    OpenAIMarketQueryPlannerEngine,
+)
+from app.agents.market_research_agent import (
+    MarketResearchAgent,
+    MarketResearchEngine,
+    OpenAIWebMarketResearchEngine,
+)
 from app.agents.supervisor_agent import SupervisorAgent
 from app.clients.ebay import MockEbayClient, OfficialEbayApiClient
 from app.clients.ebay_market import MockEbayMarketResearchClient, OfficialEbayMarketResearchClient
 from app.models.bidding import BiddingMode
-from app.models.config import SearchConfig, TargetRules
+from app.models.config import MarketResearchMode, SearchConfig, TargetRules
 from app.models.pokemon import Pokemon
 from app.models.state import WorkflowSummary
 from app.services.bid_guardrails import BidGuardrailService
@@ -69,6 +79,18 @@ def _build_auction_search_engine() -> AuctionSearchEngine:
     return OpenAIAuctionSearchEngine(model_name=model_name)
 
 
+def _build_market_query_planner_engine() -> MarketQueryPlannerEngine:
+    _require_openai_api_key()
+    model_name = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    return OpenAIMarketQueryPlannerEngine(model_name=model_name)
+
+
+def _build_market_research_engine() -> MarketResearchEngine:
+    _require_openai_api_key()
+    model_name = os.getenv("OPENAI_MARKET_RESEARCH_MODEL", os.getenv("OPENAI_MODEL", "gpt-4.1-mini"))
+    return OpenAIWebMarketResearchEngine(model_name=model_name)
+
+
 def _build_search_config(
     target_pokemon: list[Pokemon],
     target_rules: TargetRules,
@@ -100,6 +122,7 @@ def _build_search_config(
         },
         market_research={
             "enabled": _env_flag("EBAY_MARKET_RESEARCH_ENABLED", True),
+            "mode": MarketResearchMode(os.getenv("MARKET_RESEARCH_MODE", MarketResearchMode.LLM_WEB.value)),
             "active_limit": int(os.getenv("EBAY_MARKET_RESEARCH_ACTIVE_LIMIT", "50")),
             "sold_limit": int(os.getenv("EBAY_MARKET_RESEARCH_SOLD_LIMIT", "50")),
             "marketplace_insights_enabled": _env_flag("EBAY_MARKETPLACE_INSIGHTS_ENABLED", False),
@@ -108,6 +131,15 @@ def _build_search_config(
                 "https://api.ebay.com/oauth/api_scope/buy.marketplace.insights",
             ),
             "timeout_seconds": float(os.getenv("EBAY_MARKET_RESEARCH_TIMEOUT_SECONDS", "20")),
+            "web_search_enabled": _env_flag("OPENAI_MARKET_RESEARCH_WEB_SEARCH_ENABLED", True),
+            "web_search_domain_filters_enabled": _env_flag(
+                "OPENAI_MARKET_RESEARCH_DOMAIN_FILTERS_ENABLED",
+                False,
+            ),
+            "web_search_allowed_domains": os.getenv(
+                "OPENAI_MARKET_RESEARCH_ALLOWED_DOMAINS",
+                "ebay.com,pricecharting.com,130point.com,psacard.com,tcgplayer.com",
+            ),
         },
     )
 
@@ -123,6 +155,8 @@ def run_mvp(
     scan_limit: int | None = None,
     auction_search_engine: AuctionSearchEngine | None = None,
     analysis_engine: AnalysisEngine | None = None,
+    market_query_planner_engine: MarketQueryPlannerEngine | None = None,
+    market_research_engine: MarketResearchEngine | None = None,
 ) -> WorkflowSummary:
     load_dotenv()
     configure_logging(os.getenv("LOG_LEVEL", "INFO"))
@@ -149,9 +183,9 @@ def run_mvp(
     storage = SQLiteStorage(database)
     try:
         LOGGER.info(
-            "Starting MVP run with live_ebay=%s llm_agents=enabled dry_run=%s",
-            resolved_use_live_ebay,
-            dry_run,
+            "Starting PSA Pokemon auction review. Source=%s. Bidding mode=%s.",
+            "live eBay" if resolved_use_live_ebay else "sample data",
+            search_config.bidding.mode.value,
         )
         ebay_client = (
             OfficialEbayApiClient(
@@ -183,6 +217,19 @@ def run_mvp(
         )
         resolved_analysis_engine = analysis_engine or _build_analysis_engine()
         resolved_auction_search_engine = auction_search_engine or _build_auction_search_engine()
+        resolved_market_query_planner_engine = (
+            market_query_planner_engine
+            or (_build_market_query_planner_engine() if resolved_use_live_ebay else None)
+        )
+        resolved_market_research_engine = (
+            market_research_engine
+            or (
+                _build_market_research_engine()
+                if resolved_use_live_ebay
+                and search_config.market_research.mode == MarketResearchMode.LLM_WEB
+                else None
+            )
+        )
         bidding_service = select_bidding_service(
             bidding_config=search_config.bidding,
             credentials=OfficialApiBiddingCredentials(
@@ -200,7 +247,27 @@ def run_mvp(
             storage=storage,
         )
         auction_search_agent = AuctionSearchAgent(storage=storage, engine=resolved_auction_search_engine)
-        market_research_tool = MarketResearchTool(client=market_research_client, storage=storage)
+        market_query_planner_agent = (
+            MarketQueryPlannerAgent(engine=resolved_market_query_planner_engine)
+            if resolved_market_query_planner_engine
+            else None
+        )
+        market_research_agent = (
+            MarketResearchAgent(engine=resolved_market_research_engine)
+            if resolved_market_research_engine
+            else None
+        )
+        market_research_tool = MarketResearchTool(
+            storage=storage,
+            client=(
+                market_research_client
+                if market_research_agent is None
+                or search_config.market_research.mode == MarketResearchMode.OFFICIAL_EBAY_API
+                else None
+            ),
+            query_planner_agent=market_query_planner_agent,
+            market_research_agent=market_research_agent,
+        )
         analysis_agent = AnalysisAgent(storage=storage, engine=resolved_analysis_engine)
         bid_execution_tool = BidExecutionTool(
             storage=storage,
@@ -235,6 +302,8 @@ def run_mvp_loop(
     on_cycle=None,
     auction_search_engine: AuctionSearchEngine | None = None,
     analysis_engine: AnalysisEngine | None = None,
+    market_query_planner_engine: MarketQueryPlannerEngine | None = None,
+    market_research_engine: MarketResearchEngine | None = None,
 ) -> list[WorkflowSummary]:
     summaries: list[WorkflowSummary] = []
     cycle = 0
@@ -256,6 +325,8 @@ def run_mvp_loop(
                 scan_limit=scan_limit,
                 auction_search_engine=auction_search_engine,
                 analysis_engine=analysis_engine,
+                market_query_planner_engine=market_query_planner_engine,
+                market_research_engine=market_research_engine,
             )
         )
         if on_cycle is not None:

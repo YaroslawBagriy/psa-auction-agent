@@ -74,5 +74,5 @@ class AuctionSearchAgent(BaseAgent):
         result = self.engine.search(listings, search_config)
         for decision in result.decisions:
             self.storage.record_search_decision(run_id, decision)
-        self.logger.info("Auction search selected %s of %s listings", len(result.selected_listing_ids()), len(listings))
+        self.logger.debug("Auction search selected %s of %s listings", len(result.selected_listing_ids()), len(listings))
         return result

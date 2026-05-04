@@ -1,0 +1,49 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{handsonllm}
+\citation{langchainstructured}
+\citation{openaistructured}
+\citation{ebaybrowse}
+\citation{ebayproxybid}
+\citation{pydanticjsonschema}
+\@writefile{toc}{\contentsline {section}{\numberline {1}introduction}{1}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}exploring}{1}{section.2}\protected@file@percent }
+\citation{ebaybrowse}
+\@writefile{toc}{\contentsline {section}{\numberline {3}building}{2}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}System architecture}{2}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Data and models}{2}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Models and prompts}{2}{subsection.3.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces A PSA official eBay listing used during development. One lesson from this listing was that ``In the PSA Vault'' can appear on the listing page even when it is not in the title, so the program checks enriched listing-page evidence instead of relying only on title text.}}{3}{figure.1}\protected@file@percent }
+\newlabel{fig:vault}{{1}{3}{A PSA official eBay listing used during development. One lesson from this listing was that ``In the PSA Vault'' can appear on the listing page even when it is not in the title, so the program checks enriched listing-page evidence instead of relying only on title text}{figure.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Evaluation and error metrics}{3}{subsection.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}discovering}{3}{section.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Early workflow output. The system scanned 100 listings, found one candidate, reviewed it, and denied it because the recommended max bid did not exceed the current auction price by enough to leave margin.}}{4}{figure.2}\protected@file@percent }
+\newlabel{fig:early-output}{{2}{4}{Early workflow output. The system scanned 100 listings, found one candidate, reviewed it, and denied it because the recommended max bid did not exceed the current auction price by enough to leave margin}{figure.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Class Topic 1: Prompt engineering}{4}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Class Topic 2: Agents and task decomposition}{4}{section.6}\protected@file@percent }
+\citation{ebaybrowse}
+\citation{ebayproxybid}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces A failure case that improved the project. The LLM saw incompatible sold-price clusters and over-valued the card. The final version now tells the market-research and analysis agents to reject unverified high-price clusters, and deterministic guardrails cap values using lower sold comps.}}{5}{figure.3}\protected@file@percent }
+\newlabel{fig:outlier}{{3}{5}{A failure case that improved the project. The LLM saw incompatible sold-price clusters and over-valued the card. The final version now tells the market-research and analysis agents to reject unverified high-price clusters, and deterministic guardrails cap values using lower sold comps}{figure.3}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces A later Garchomp review included market evidence fields such as active listing count, estimated market value, recent sold prices, sell-through rate, and a denial reason. This illustrates the move from free-form prose to structured evidence.}}{5}{figure.4}\protected@file@percent }
+\newlabel{fig:garchomp-context}{{4}{5}{A later Garchomp review included market evidence fields such as active listing count, estimated market value, recent sold prices, sell-through rate, and a denial reason. This illustrates the move from free-form prose to structured evidence}{figure.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Class Topic 3: Tool use and external data}{5}{section.7}\protected@file@percent }
+\citation{langchainstructured}
+\citation{pydanticjsonschema}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Class Topic 4: Structured output and typed models}{6}{section.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}Class Topic 5: Evaluation, guardrails, and human oversight}{6}{section.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {10}Correctness and completeness}{6}{section.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {11}limitations}{6}{section.11}\protected@file@percent }
+\citation{ebayproxybid}
+\bibcite{handsonllm}{1}
+\bibcite{langchainstructured}{2}
+\bibcite{openaistructured}{3}
+\bibcite{ebaybrowse}{4}
+\bibcite{ebayproxybid}{5}
+\bibcite{pydanticjsonschema}{6}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Structured review output for a high-value Pikachu listing. The output includes active count, sold prices, sell-through rate, estimated value, max bid, pipeline stage, and denial reason.}}{7}{figure.5}\protected@file@percent }
+\newlabel{fig:high-value}{{5}{7}{Structured review output for a high-value Pikachu listing. The output includes active count, sold prices, sell-through rate, estimated value, max bid, pipeline stage, and denial reason}{figure.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {12}Sharing (Optional)}{7}{section.12}\protected@file@percent }
+\gdef \@abspage@last{7}

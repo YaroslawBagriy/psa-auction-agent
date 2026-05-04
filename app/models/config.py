@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from enum import Enum
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.bidding import BiddingMode
@@ -54,13 +56,41 @@ class BiddingConfig(BaseModel):
     offer_api_timeout_seconds: float = 20.0
 
 
+class MarketResearchMode(str, Enum):
+    LLM_WEB = "llm_web"
+    OFFICIAL_EBAY_API = "official_ebay_api"
+
+
 class MarketResearchConfig(BaseModel):
     enabled: bool = True
+    mode: MarketResearchMode = MarketResearchMode.LLM_WEB
     active_limit: int = Field(default=50, ge=1, le=200)
     sold_limit: int = Field(default=50, ge=1, le=200)
     marketplace_insights_enabled: bool = False
     marketplace_insights_scope: str = "https://api.ebay.com/oauth/api_scope/buy.marketplace.insights"
     timeout_seconds: float = 20.0
+    web_search_enabled: bool = True
+    web_search_domain_filters_enabled: bool = False
+    web_search_allowed_domains: list[str] = Field(
+        default_factory=lambda: [
+            "ebay.com",
+            "pricecharting.com",
+            "130point.com",
+            "psacard.com",
+            "tcgplayer.com",
+        ]
+    )
+
+    @field_validator("web_search_allowed_domains", mode="before")
+    @classmethod
+    def normalize_web_search_domains(cls, value: object) -> object:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [domain.strip() for domain in value.split(",") if domain.strip()]
+        if isinstance(value, (set, list, tuple)):
+            return [str(domain).strip() for domain in value if str(domain).strip()]
+        return value
 
 
 class SearchConfig(BaseModel):

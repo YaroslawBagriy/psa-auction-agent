@@ -49,7 +49,7 @@ class ListingPreparationTool:
                     if validation.passed:
                         self.storage.record_candidate_listing(run_id, listing, validation)
                         validated_listings.append(listing)
-                        self.logger.info(
+                        self.logger.debug(
                             "Validated candidate listing_id=%s pokemon=%s grade=%s price=%.2f ends_in=%.1fm title=%s",
                             listing.listing_id,
                             listing.detected_pokemon.display_name if listing.detected_pokemon else "unknown",
@@ -59,14 +59,14 @@ class ListingPreparationTool:
                             listing.title[:120],
                         )
                     else:
-                        self.logger.info(
+                        self.logger.debug(
                             "Rejected parsed listing_id=%s reasons=%s title=%s",
                             raw_listing.listing_id,
                             "; ".join(validation.reasons),
                             raw_listing.title[:120],
                         )
                 else:
-                    self.logger.info(
+                    self.logger.debug(
                         "Rejected raw listing_id=%s reasons=%s title=%s",
                         raw_listing.listing_id,
                         "; ".join(pre_validation.reasons),
@@ -75,13 +75,18 @@ class ListingPreparationTool:
                 results.append(result)
                 results_by_listing_id[raw_listing.listing_id] = result
             except Exception as exc:  # pragma: no cover - defensive workflow boundary
-                self.logger.exception("Listing preparation failed for %s", raw_listing.listing_id)
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.exception("Listing preparation failed for %s", raw_listing.listing_id)
+                else:
+                    self.logger.warning(
+                        "Step 1 result: listing details could not be prepared. This auction will be denied safely."
+                    )
                 self.storage.record_error(run_id, raw_listing.listing_id, "listing_preparation", str(exc))
                 failed = ListingWorkflowResult(raw_listing=raw_listing, errors=[str(exc)])
                 results.append(failed)
                 results_by_listing_id[raw_listing.listing_id] = failed
 
-        self.logger.info(
+        self.logger.debug(
             "Listing preparation produced %s validated candidates from %s raw listings",
             len(validated_listings),
             len(raw_listings),

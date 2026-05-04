@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import time
-from typing import Any
+from typing import Any, Iterator
 from urllib.parse import quote
 
 import requests
@@ -33,6 +33,20 @@ class EbayClient(ABC):
         currency: str = "USD",
     ) -> list[RawListing]:
         raise NotImplementedError
+
+    def iter_psa_listings(
+        self,
+        limit: int | None = None,
+        max_minutes_remaining: int | None = None,
+        max_current_price: float | None = None,
+        currency: str = "USD",
+    ) -> Iterator[RawListing]:
+        yield from self.fetch_psa_listings(
+            limit=limit,
+            max_minutes_remaining=max_minutes_remaining,
+            max_current_price=max_current_price,
+            currency=currency,
+        )
 
 
 class MockEbayClient(EbayClient):
@@ -115,14 +129,24 @@ class OfficialEbayApiClient(EbayClient):
         max_current_price: float | None = None,
         currency: str = "USD",
     ) -> list[RawListing]:
-        target_limit = limit or 100
-        self.logger.info(
-            "Fetching PSA eBay auction summaries seller=%s limit=%s max_minutes_remaining=%s max_current_price=%s",
-            self.official_seller_name,
-            target_limit,
-            max_minutes_remaining,
-            max_current_price,
+        return list(
+            self.iter_psa_listings(
+                limit=limit,
+                max_minutes_remaining=max_minutes_remaining,
+                max_current_price=max_current_price,
+                currency=currency,
+            )
         )
+
+    def iter_psa_listings(
+        self,
+        limit: int | None = None,
+        max_minutes_remaining: int | None = None,
+        max_current_price: float | None = None,
+        currency: str = "USD",
+    ) -> Iterator[RawListing]:
+        target_limit = limit or 100
+        self.logger.info("Getting PSA auction list from eBay...")
         token = self._get_application_access_token()
         summaries = self._search_item_summaries(
             token=token,
@@ -131,13 +155,13 @@ class OfficialEbayApiClient(EbayClient):
             max_current_price=max_current_price,
             currency=currency,
         )
-        self.logger.info("eBay Browse search returned %s summaries", len(summaries))
+        self.logger.info("Found %s PSA auction summaries on eBay.", len(summaries))
         listings: list[RawListing] = []
 
         for index, summary in enumerate(summaries, start=1):
             try:
                 title = str(summary.get("title") or "")
-                self.logger.info(
+                self.logger.debug(
                     "Enriching eBay listing %s/%s item_id=%s title=%s",
                     index,
                     len(summaries),
@@ -151,8 +175,10 @@ class OfficialEbayApiClient(EbayClient):
                 self.logger.warning("Skipping eBay listing after mapping error: %s", exc)
                 continue
             listings.append(listing)
+            yield listing
 
-        return listings[:target_limit]
+            if len(listings) >= target_limit:
+                break
 
     def _get_application_access_token(self) -> str:
         if self.access_token and time() < self._token_expires_at:
@@ -224,7 +250,7 @@ class OfficialEbayApiClient(EbayClient):
             payload = response.json()
             page_items = payload.get("itemSummaries") or []
             items.extend(page_items)
-            self.logger.info(
+            self.logger.debug(
                 "Fetched %s eBay summary rows from offset=%s total_so_far=%s",
                 len(page_items),
                 offset,

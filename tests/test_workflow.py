@@ -13,7 +13,11 @@ from app.models.review import AuctionSearchDecision, AuctionSearchResult
 
 
 class FakeAuctionSearchEngine(AuctionSearchEngine):
+    def __init__(self) -> None:
+        self.batch_sizes: list[int] = []
+
     def search(self, listings, search_config):
+        self.batch_sizes.append(len(listings))
         return AuctionSearchResult(
             decisions=[
                 AuctionSearchDecision(
@@ -29,7 +33,11 @@ class FakeAuctionSearchEngine(AuctionSearchEngine):
 
 
 class FakeAnalysisEngine(AnalysisEngine):
+    def __init__(self) -> None:
+        self.batch_sizes: list[int] = []
+
     def analyze(self, analysis_input: MarketAnalysisInput) -> MarketAnalysisBatchResult:
+        self.batch_sizes.append(len(analysis_input.listings))
         analyses: list[AnalysisResult] = []
         for listing in analysis_input.listings:
             market_context = listing.market_context
@@ -61,6 +69,9 @@ def _fake_analysis_engine() -> FakeAnalysisEngine:
 
 
 def test_run_mvp_dry_run_processes_sample_data(tmp_path: Path) -> None:
+    auction_search_engine = _fake_auction_search_engine()
+    analysis_engine = _fake_analysis_engine()
+
     summary = run_mvp(
         target_pokemon=[Pokemon.PIKACHU, Pokemon.CHARIZARD, Pokemon.GENGAR],
         target_rules=TargetRules(
@@ -70,8 +81,8 @@ def test_run_mvp_dry_run_processes_sample_data(tmp_path: Path) -> None:
         dry_run=True,
         database_path=tmp_path / "workflow.db",
         use_live_ebay=False,
-        auction_search_engine=_fake_auction_search_engine(),
-        analysis_engine=_fake_analysis_engine(),
+        auction_search_engine=auction_search_engine,
+        analysis_engine=analysis_engine,
     )
 
     assert summary.scanned_count == 7
@@ -80,6 +91,8 @@ def test_run_mvp_dry_run_processes_sample_data(tmp_path: Path) -> None:
     assert summary.analyses_completed == 2
     assert summary.bids_approved == 1
     assert summary.bid_attempts == 0
+    assert auction_search_engine.batch_sizes == [1, 1]
+    assert analysis_engine.batch_sizes == [1, 1]
 
     approved = [result for result in summary.results if result.bid_decision and result.bid_decision.approved]
     assert len(approved) == 1
