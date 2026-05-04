@@ -32,7 +32,7 @@ from app.agents.supervisor_agent import SupervisorAgent
 from app.clients.ebay import MockEbayClient, OfficialEbayApiClient
 from app.clients.ebay_market import MockEbayMarketResearchClient, OfficialEbayMarketResearchClient
 from app.models.bidding import BiddingMode
-from app.models.config import MarketResearchMode, SearchConfig, TargetRules
+from app.models.config import BidGuardrails, MarketResearchMode, SearchConfig, TargetRules
 from app.models.pokemon import Pokemon
 from app.models.state import WorkflowSummary
 from app.services.bid_guardrails import BidGuardrailService
@@ -94,17 +94,18 @@ def _build_market_research_engine() -> MarketResearchEngine:
 def _build_search_config(
     target_pokemon: list[Pokemon],
     target_rules: TargetRules,
+    bid_guardrails: BidGuardrails | None,
     dry_run: bool,
     poll_interval_minutes: int,
     scan_limit: int,
 ) -> SearchConfig:
-    return SearchConfig(
-        target_pokemon=target_pokemon,
-        target_rules=target_rules,
-        dry_run=dry_run,
-        scan_limit=scan_limit,
-        poll_interval_minutes=poll_interval_minutes,
-        bidding={
+    payload = {
+        "target_pokemon": target_pokemon,
+        "target_rules": target_rules,
+        "dry_run": dry_run,
+        "scan_limit": scan_limit,
+        "poll_interval_minutes": poll_interval_minutes,
+        "bidding": {
             "mode": BiddingMode(os.getenv("EBAY_BIDDING_MODE", BiddingMode.MANUAL.value)),
             "enabled": _env_flag("EBAY_BIDDING_ENABLED", False),
             "require_human_confirmation": _env_flag("EBAY_REQUIRE_HUMAN_CONFIRMATION", True),
@@ -120,7 +121,7 @@ def _build_search_config(
             "currency": os.getenv("EBAY_BID_CURRENCY", "USD"),
             "offer_api_timeout_seconds": float(os.getenv("EBAY_OFFER_API_TIMEOUT_SECONDS", "20")),
         },
-        market_research={
+        "market_research": {
             "enabled": _env_flag("EBAY_MARKET_RESEARCH_ENABLED", True),
             "mode": MarketResearchMode(os.getenv("MARKET_RESEARCH_MODE", MarketResearchMode.LLM_WEB.value)),
             "active_limit": int(os.getenv("EBAY_MARKET_RESEARCH_ACTIVE_LIMIT", "50")),
@@ -141,12 +142,17 @@ def _build_search_config(
                 "ebay.com,pricecharting.com,130point.com,psacard.com,tcgplayer.com",
             ),
         },
-    )
+    }
+    if bid_guardrails is not None:
+        payload["bid_guardrails"] = bid_guardrails
+
+    return SearchConfig(**payload)
 
 
 def run_mvp(
     target_pokemon: list[Pokemon],
     target_rules: TargetRules,
+    bid_guardrails: BidGuardrails | None = None,
     dry_run: bool = True,
     database_path: str | Path | None = None,
     sample_ebay_path: str | Path | None = None,
@@ -172,6 +178,7 @@ def run_mvp(
     search_config = _build_search_config(
         target_pokemon=target_pokemon,
         target_rules=target_rules,
+        bid_guardrails=bid_guardrails,
         dry_run=dry_run,
         poll_interval_minutes=resolved_poll_interval_minutes,
         scan_limit=resolved_scan_limit,
@@ -291,6 +298,7 @@ def run_mvp(
 def run_mvp_loop(
     target_pokemon: list[Pokemon],
     target_rules: TargetRules,
+    bid_guardrails: BidGuardrails | None = None,
     dry_run: bool = True,
     database_path: str | Path | None = None,
     sample_ebay_path: str | Path | None = None,
@@ -317,6 +325,7 @@ def run_mvp_loop(
             run_mvp(
                 target_pokemon=target_pokemon,
                 target_rules=target_rules,
+                bid_guardrails=bid_guardrails,
                 dry_run=dry_run,
                 database_path=database_path,
                 sample_ebay_path=sample_ebay_path,

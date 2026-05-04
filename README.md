@@ -107,7 +107,7 @@ from app.models.pokemon import Pokemon
 summary = run_mvp(
     target_pokemon=[Pokemon.PIKACHU, Pokemon.CHARIZARD, Pokemon.GENGAR],
     target_rules=TargetRules(
-        allowed_grades={"9", "10"},
+        allowed_grades={"8", "9", "10"},
         max_current_price=1500.0,
     ),
     dry_run=True,
@@ -164,6 +164,28 @@ The runner targets every Pokemon currently supported by the enum by default. To 
 
 ```bash
 python scripts/run_mvp.py --once --recommendations-only --pokemon pikachu charizard gengar
+```
+
+The default script now allows PSA grades 8, 9, and 10. To broaden or narrow grades for a run:
+
+```bash
+python scripts/run_mvp.py --once --recommendations-only --grades 6 7 8 9 10
+```
+
+For a live class demo where you want more listings to make it deeper into the agent workflow, use demo mode:
+
+```bash
+python scripts/run_mvp.py --once --recommendations-only --scan-limit 100 --demo-mode
+```
+
+Demo mode is intentionally labeled. It targets all supported Pokemon, allows PSA grades 6-10, raises the current-price review cap to `$2500`, lowers the confidence threshold to `0.55`, permits uncertain trend labels, and sets the minimum expected margin to `$0`. Bidding still remains dry-run/manual, and the output includes `showcase_auctions` so the demo can show analyzed listings even when final bid guardrails deny them.
+
+Useful live-demo tuning options:
+
+```bash
+python scripts/run_mvp.py --once --recommendations-only --scan-limit 150 --demo-mode --showcase-limit 12
+python scripts/run_mvp.py --once --recommendations-only --all-pokemon --grades 7 8 9 10 --min-margin 5
+python scripts/run_mvp.py --once --recommendations-only --pokemon pikachu charizard rayquaza lugia gengar --grades 8 9 10
 ```
 
 5. Run continuous polling every 15 minutes:

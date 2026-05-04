@@ -8,7 +8,15 @@ from app.models.card_language import CardLanguage
 from app.models.listing import Listing, RawListing
 from app.models.pokemon import Pokemon
 from app.models.state import ListingWorkflowResult, WorkflowSummary
-from scripts.run_mvp import actionable_auction_payload, actionable_auctions
+from scripts.run_mvp import (
+    DEMO_ALLOWED_GRADES,
+    build_bid_guardrails,
+    build_target_rules,
+    parse_target_pokemon,
+    showcase_auctions,
+    actionable_auction_payload,
+    actionable_auctions,
+)
 
 
 def _raw_listing(**overrides) -> RawListing:
@@ -165,3 +173,53 @@ def test_actionable_auction_payload_contains_manual_next_action_fields() -> None
     assert payload["recommended_max_bid"] == 85.0
     assert payload["url"] == "https://www.ebay.com/itm/123"
     assert payload["message"] == "Manual bidding required."
+
+
+def test_parse_target_pokemon_accepts_hyphenated_values_and_aliases() -> None:
+    targets = parse_target_pokemon(["ho-oh", "mega charizard x", "red's pikachu"], use_all=False)
+
+    assert targets == [Pokemon.HO_OH, Pokemon.CHARIZARD, Pokemon.PIKACHU]
+
+
+def test_build_target_rules_defaults_to_more_demo_friendly_grades() -> None:
+    rules = build_target_rules()
+
+    assert rules.allowed_grades == {"8", "9", "10"}
+
+
+def test_demo_guardrails_are_relaxed_but_explicit() -> None:
+    guardrails = build_bid_guardrails(
+        demo_mode=True,
+        confidence_threshold=None,
+        min_expected_margin=None,
+        max_bid_cap=None,
+        allow_uncertain_trend=False,
+    )
+
+    assert guardrails.confidence_threshold == 0.55
+    assert guardrails.min_expected_margin == 0.0
+    assert "uncertain" in guardrails.allowed_trend_outlooks
+    assert DEMO_ALLOWED_GRADES == {"6", "7", "8", "9", "10"}
+
+
+def test_showcase_auctions_include_analyzed_near_misses() -> None:
+    approved_live = _approved_result()
+    near_miss = ListingWorkflowResult(
+        raw_listing=_raw_listing(listing_id="near"),
+        listing=_listing(listing_id="near", current_price=90.0),
+        analysis=_analysis(
+            listing_id="near",
+            estimated_market_value=120.0,
+            recommended_max_bid=80.0,
+        ),
+        bid_decision=BidDecision(
+            listing_id="near",
+            approved=False,
+            reason="Approved max bid does not exceed current price.",
+            dry_run=True,
+        ),
+    )
+
+    showcase = showcase_auctions(_summary([near_miss, approved_live]), limit=2)
+
+    assert showcase == [approved_live, near_miss]

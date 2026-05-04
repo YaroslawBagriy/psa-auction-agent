@@ -115,7 +115,7 @@ def test_parser_uses_card_subject_after_card_number_for_pokemon_identity() -> No
 
     listing = parser.parse(raw_listing)
 
-    assert listing.detected_pokemon is None
+    assert listing.detected_pokemon == Pokemon.CLEFAIRY
     assert listing.card_number == "013"
     assert listing.is_pokemon_related is True
 
